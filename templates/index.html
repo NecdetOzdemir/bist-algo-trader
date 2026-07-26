@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIST AI Trader | Yapay Zeka Borsa Asistanı</title>
+    <meta name="description" content="Yapay zeka destekli BIST hisse analiz ve trading sinyal sistemi">
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>🧠 BIST AI <span>Trader</span></h1>
+            <p>Yapay Zeka Destekli Trading Sinyal Sistemi</p>
+        </header>
+
+        <!-- Arama -->
+        <div class="search-section glass-panel">
+            <input type="text" id="tickerInput" placeholder="Hisse kodu gir: THYAO, TUPRS, SASA..." autocomplete="off">
+            <button id="analyzeBtn" onclick="analyzeTicker()">Analiz Et ▶</button>
+        </div>
+        
+        <!-- Yükleniyor -->
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Yapay Zeka Analiz Ediyor...</p>
+        </div>
+
+        <!-- Sonuç Bölümü -->
+        <div id="result-section" class="hidden">
+            
+            <!-- Üst: Skor Kartı -->
+            <div class="score-card glass-panel" id="score-container">
+                <div class="score-header">
+                    <div>
+                        <h2 id="tic-name">THYAO</h2>
+                        <span id="price-tag" class="price-tag">0.00 TL</span>
+                        <span id="date-tag" class="date-tag"></span>
+                    </div>
+                    <div class="score-circle">
+                        <span id="score-value">0</span>
+                        <small>AI Skoru</small>
+                    </div>
+                </div>
+                <h3 id="action-text">BEKLE</h3>
+                <p id="action-comment" class="comment"></p>
+            </div>
+
+            <!-- Shakeout Uyarısı (Sadece düşüş günleri görünür) -->
+            <div id="shakeout-panel" class="shakeout-panel glass-panel hidden">
+                <h4 id="shakeout-title">⚠️ Manipülasyon Analizi</h4>
+                <p id="shakeout-comment"></p>
+            </div>
+
+            <!-- Pivot Seviyeleri -->
+            <div class="pivot-section glass-panel">
+                <h4 class="section-label">📐 Günün Pivot Seviyeleri</h4>
+                <div class="pivot-levels">
+                    <div class="pivot-level r2"><span class="level-label">R2</span><span id="r2-val">—</span></div>
+                    <div class="pivot-level r1"><span class="level-label">R1 ← Direnç / Hedef</span><span id="r1-val">—</span></div>
+                    <div class="pivot-level pp"><span class="level-label">PP (Pivot Noktası)</span><span id="pp-val">—</span></div>
+                    <div class="pivot-level s1"><span class="level-label">S1 ← Destek / Alım</span><span id="s1-val">—</span></div>
+                    <div class="pivot-level s2"><span class="level-label">S2</span><span id="s2-val">—</span></div>
+                </div>
+            </div>
+
+            <!-- Trading Planı -->
+            <div class="trading-plan glass-panel">
+                <h4 class="section-label">📋 Trading Planı</h4>
+                <div class="plan-grid">
+                    <div class="plan-card entry-card">
+                        <div class="plan-icon">🎯</div>
+                        <div class="plan-label">Giriş Noktası</div>
+                        <div class="plan-value" id="entry-val">—</div>
+                        <div class="plan-sub">Bu seviyede alım düşün</div>
+                    </div>
+                    <div class="plan-card profit-card">
+                        <div class="plan-icon">✅</div>
+                        <div class="plan-label">Kâr Hedefi (R1)</div>
+                        <div class="plan-value" id="tp-val">—</div>
+                        <div class="plan-sub" id="gain-pct">+%0.00</div>
+                    </div>
+                    <div class="plan-card stop-card">
+                        <div class="plan-icon">🛑</div>
+                        <div class="plan-label">Stop-Loss (S2)</div>
+                        <div class="plan-value" id="sl-val">—</div>
+                        <div class="plan-sub" id="loss-pct">-%0.00</div>
+                    </div>
+                    <div class="plan-card rr-card">
+                        <div class="plan-icon">⚖️</div>
+                        <div class="plan-label">Risk/Ödül</div>
+                        <div class="plan-value" id="rr-val">1:0</div>
+                        <div class="plan-sub">≥1.5 hedefle</div>
+                    </div>
+                </div>
+                <p class="disclaimer">⚠️ Bu bir yatırım tavsiyesi değil, teknik analiz önerisidir. Kararı sen verirsin.</p>
+            </div>
+
+            <!-- Teknik Göstergeler -->
+            <div class="tech-section glass-panel">
+                <h4 class="section-label">📊 Teknik Göstergeler</h4>
+                <div class="tech-grid">
+                    <div class="tech-item">
+                        <span class="tech-label">RSI (14)</span>
+                        <span class="tech-value" id="rsi-val">—</span>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">MACD</span>
+                        <span class="tech-value" id="macd-val">—</span>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">MFI (Para Akışı)</span>
+                        <span class="tech-value" id="mfi-val">—</span>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">Hacim Oran</span>
+                        <span class="tech-value" id="vol-val">—</span>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">ATR (Volatilite)</span>
+                        <span class="tech-value" id="atr-val">—</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Günün Önerileri -->
+        <div class="recommendations-section">
+            <h3 class="section-title">🔥 Günün En Yüksek Puanlı Hisseleri</h3>
+            <div class="rec-chips" id="rec-chips">
+                <div class="chip-loading">Yapay Zeka Tüm BIST'i Tarayıp Sıralıyor...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

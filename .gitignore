@@ -11,3 +11,6 @@ data/
 .vscode/
 .idea/
 tv_tickers.txt
+ml_data/
+ml_models/
+

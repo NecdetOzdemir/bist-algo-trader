@@ -115,7 +115,6 @@ def validate_tickers_yfinance(tickers: list, suffix: str = '.IS') -> dict:
     print(f"\n  ✅ Geçerli: {len(valid)} | ❌ Geçersiz/Delisted: {len(invalid)}")
     return {'valid': sorted(valid), 'invalid': sorted(invalid)}
 
-
 def try_all_sources() -> list:
     """Tüm kaynakları dene, birleştir ve tekrarları temizle."""
     all_tickers = set()
