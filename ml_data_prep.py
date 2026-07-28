@@ -54,6 +54,16 @@ def add_technical_indicators(df):
     df['BB_Low'] = bb.bollinger_lband()
     df['BB_Width'] = (df['BB_High'] - df['BB_Low']) / df['Close'] # Bant genisligi (Sıkışma tespiti)
 
+    # Keltner Channels & TTM Squeeze (John F. Carter)
+    kc_middle = df['Close'].rolling(window=20).mean()
+    # Keltner genellikle 20 ATR veya 14 ATR kullanır, biz halihazırda hesaplanan 14 günlük ATR'yi kullanabiliriz.
+    kc_upper = kc_middle + (1.5 * df['ATR'])
+    kc_lower = kc_middle - (1.5 * df['ATR'])
+    
+    # Squeeze is ON (Oynaklık aşırı düştü, patlama yakındır)
+    # BB'nin tamamı KC'nin içindeyse squeeze vardır.
+    df['Squeeze_On'] = (df['BB_Low'] > kc_lower) & (df['BB_High'] < kc_upper)
+
     # --- 3. Hacim Anormallikleri (Manipülasyon ve Akıllı Para İzleri) ---
     # 10 günlük ve 20 günlük ortalama hacim
     df['Vol_10_SMA'] = df['Volume'].rolling(window=10).mean()
@@ -62,6 +72,11 @@ def add_technical_indicators(df):
     # Göreceli Hacim (Relative Volume) - Bugunun hacmi ortalamanin kac kati?
     # ML modelinin tahtaci girisini anlayacagi yer burasi!
     df['Rel_Volume_10'] = np.where(df['Vol_10_SMA'] > 0, df['Volume'] / df['Vol_10_SMA'], 1)
+    
+    # VPA (Volume Price Analysis - Anna Coulling) Anomaly Detection
+    # Mum gövdesi küçük ama hacim devasa ise bu kurumsal bir ayak izidir (Gizli Toplama / Dağıtma)
+    candle_body = abs(df['Close'] - df['Open']) / df['Open']
+    df['VPA_Anomaly'] = (candle_body < 0.015) & (df['Rel_Volume_10'] > 1.8)
     
     # Hacim Fiyat Trendi (VPT) veya MFI
     df['MFI'] = ta.volume.MFIIndicator(high=df['High'], low=df['Low'], close=df['Close'], volume=df['Volume'], window=14).money_flow_index()

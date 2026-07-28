@@ -20,10 +20,22 @@
             <p>Yapay Zeka Destekli Trading Sinyal Sistemi</p>
         </header>
 
-        <!-- Arama -->
+        <!-- Arama ve Tarayıcı -->
         <div class="search-section glass-panel">
-            <input type="text" id="tickerInput" placeholder="Hisse kodu gir: THYAO, TUPRS, SASA..." autocomplete="off">
-            <button id="analyzeBtn" onclick="analyzeTicker()">Analiz Et ▶</button>
+            <div class="input-group">
+                <input type="text" id="tickerInput" placeholder="Hisse kodu gir: THYAO, TUPRS, SASA..." autocomplete="off">
+                <button id="analyzeBtn" onclick="analyzeTicker()">Analiz Et ▶</button>
+            </div>
+            <div class="scanner-group">
+                <button id="scanBtn" onclick="scanOpportunities()" class="scan-button">🎯 BIST 100 Fırsat Tarayıcı</button>
+                <button id="topBtn" onclick="scanTopScores()" class="scan-button" style="background: linear-gradient(135deg, #ff7b00 0%, #ff003c 100%); margin-top: 10px; box-shadow: 0 4px 15px rgba(255, 0, 60, 0.3);">🔥 Günün En İyileri</button>
+            </div>
+        </div>
+        
+        <!-- Tarayıcı Sonuçları -->
+        <div id="scanner-results" class="hidden glass-panel scanner-panel">
+            <h3>🎯 Günün Fırsatları (RSI < 35 & AI Skor > 55)</h3>
+            <div id="scanner-list"></div>
         </div>
         
         <!-- Yükleniyor -->
@@ -57,16 +69,26 @@
                 <h4 id="shakeout-title">⚠️ Manipülasyon Analizi</h4>
                 <p id="shakeout-comment"></p>
             </div>
+            
+            <!-- Akıllı Para (SMC) Analizi -->
+            <div id="smc-panel" class="smc-panel glass-panel hidden">
+                <h4>🐋 Akıllı Para (SMC) Analizi</h4>
+                <ul id="smc-list" class="smc-list">
+                    <!-- JS ile doldurulacak -->
+                </ul>
+            </div>
 
             <!-- Pivot Seviyeleri -->
             <div class="pivot-section glass-panel">
-                <h4 class="section-label">📐 Günün Pivot Seviyeleri</h4>
-                <div class="pivot-levels">
-                    <div class="pivot-level r2"><span class="level-label">R2</span><span id="r2-val">—</span></div>
-                    <div class="pivot-level r1"><span class="level-label">R1 ← Direnç / Hedef</span><span id="r1-val">—</span></div>
-                    <div class="pivot-level pp"><span class="level-label">PP (Pivot Noktası)</span><span id="pp-val">—</span></div>
-                    <div class="pivot-level s1"><span class="level-label">S1 ← Destek / Alım</span><span id="s1-val">—</span></div>
-                    <div class="pivot-level s2"><span class="level-label">S2</span><span id="s2-val">—</span></div>
+                <h4>Klasik ve Camarilla Pivotları</h4>
+                <div class="pivot-grid">
+                    <div class="pivot-item"><span class="label">Klasik R2 (Direnç)</span><span class="value" id="r2-val">-</span></div>
+                    <div class="pivot-item"><span class="label">Camarilla H3 (Direnç)</span><span class="value" id="camh3-val">-</span></div>
+                    <div class="pivot-item"><span class="label">Klasik R1 (Direnç)</span><span class="value" id="r1-val">-</span></div>
+                    <div class="pivot-item main-pivot"><span class="label">Pivot (Orta)</span><span class="value" id="pp-val">-</span></div>
+                    <div class="pivot-item"><span class="label">Klasik S1 (Destek)</span><span class="value" id="s1-val">-</span></div>
+                    <div class="pivot-item"><span class="label">Camarilla L3 (Destek)</span><span class="value" id="caml3-val">-</span></div>
+                    <div class="pivot-item"><span class="label">Klasik S2 (Destek)</span><span class="value" id="s2-val">-</span></div>
                 </div>
             </div>
 
@@ -129,16 +151,8 @@
                 </div>
             </div>
         </div>
-
-        <!-- Günün Önerileri -->
-        <div class="recommendations-section">
-            <h3 class="section-title">🔥 Günün En Yüksek Puanlı Hisseleri</h3>
-            <div class="rec-chips" id="rec-chips">
-                <div class="chip-loading">Yapay Zeka Tüm BIST'i Tarayıp Sıralıyor...</div>
-            </div>
-        </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=3"></script>
 </body>
 </html>

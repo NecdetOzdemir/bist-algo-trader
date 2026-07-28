@@ -1,27 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // Öneriler yükle
-    fetch('/api/recommendations')
-        .then(r => r.json())
-        .then(data => {
-            const container = document.getElementById('rec-chips');
-            container.innerHTML = '';
-            if (data.status === 'success') {
-                data.list.forEach(item => {
-                    const chip = document.createElement('div');
-                    chip.className = 'chip';
-                    chip.innerHTML = `${item.ticker} <span style="color:var(--accent); font-size:0.85em;">⭐ ${item.score}</span>`;
-                    chip.onclick = () => {
-                        document.getElementById('tickerInput').value = item.ticker;
-                        analyzeTicker();
-                    };
-                    container.appendChild(chip);
-                });
-            }
-        })
-        .catch(() => {
-            document.getElementById('rec-chips').innerHTML = '<span class="chip-loading">Yüklenemedi.</span>';
-        });
-
     document.getElementById('tickerInput').addEventListener('keypress', e => {
         if (e.key === 'Enter') analyzeTicker();
     });
@@ -77,12 +54,31 @@ function analyzeTicker() {
                     panel.style.borderLeftColor = '#ff7b00';
                 }
             }
+            
+            // --- SMC (Akıllı Para) Paneli ---
+            if (data.smc_comments && data.smc_comments.length > 0) {
+                const smcPanel = document.getElementById('smc-panel');
+                const smcList = document.getElementById('smc-list');
+                smcList.innerHTML = ''; // Temizle
+                
+                data.smc_comments.forEach(comment => {
+                    const li = document.createElement('li');
+                    li.innerText = comment;
+                    smcList.appendChild(li);
+                });
+                
+                smcPanel.classList.remove('hidden');
+            } else {
+                document.getElementById('smc-panel').classList.add('hidden');
+            }
 
             // --- Pivot Seviyeleri ---
             document.getElementById('r2-val').innerText = `${data.r2.toFixed(2)} TL`;
+            if (data.cam_h3) document.getElementById('camh3-val').innerText = `${data.cam_h3.toFixed(2)} TL`;
             document.getElementById('r1-val').innerText = `${data.r1.toFixed(2)} TL`;
             document.getElementById('pp-val').innerText = `${data.pp.toFixed(2)} TL`;
             document.getElementById('s1-val').innerText = `${data.s1.toFixed(2)} TL`;
+            if (data.cam_l3) document.getElementById('caml3-val').innerText = `${data.cam_l3.toFixed(2)} TL`;
             document.getElementById('s2-val').innerText = `${data.s2.toFixed(2)} TL`;
 
             // Mevcut fiyatı pivot haritasına göre işaretle
@@ -121,17 +117,23 @@ function analyzeTicker() {
 
 function highlightPivot(price, r2, r1, pp, s1, s2) {
     const levels = [
-        { id: 'r2', val: r2 }, { id: 'r1', val: r1 },
-        { id: 'pp', val: pp }, { id: 's1', val: s1 }, { id: 's2', val: s2 }
+        { id: 'r2-val', val: r2 }, { id: 'r1-val', val: r1 },
+        { id: 'pp-val', val: pp }, { id: 's1-val', val: s1 }, { id: 's2-val', val: s2 }
     ];
     levels.forEach(({ id }) => {
-        document.querySelector(`.pivot-level.${id}`).style.opacity = '0.7';
+        let el = document.getElementById(id);
+        if(el) {
+            el.parentNode.style.opacity = '0.7';
+            el.parentNode.style.border = '';
+        }
     });
 
     // Fiyata en yakın seviyeyi parlat
     let closest = levels.reduce((a, b) => Math.abs(a.val - price) < Math.abs(b.val - price) ? a : b);
-    document.querySelector(`.pivot-level.${closest.id}`).style.opacity = '1';
-    document.querySelector(`.pivot-level.${closest.id}`).style.transform = 'scale(1.02)';
+    let closestEl = document.getElementById(closest.id).parentNode;
+    closestEl.style.opacity = '1';
+    closestEl.style.transform = 'scale(1.02)';
+    closestEl.style.border = '1px solid var(--accent)';
 }
 
 function animateValue(id, start, end, duration) {
@@ -150,4 +152,135 @@ function animateValue(id, start, end, duration) {
             obj.innerText = Math.round(current);
         }
     }, stepTime);
+}
+
+function scanOpportunities() {
+    const btn = document.getElementById('scanBtn');
+    const resultsPanel = document.getElementById('scanner-results');
+    const list = document.getElementById('scanner-list');
+    
+    // UI Yükleniyor Durumu
+    btn.innerHTML = '⏳ Taranıyor (100 Hisse)... Lütfen bekleyin.';
+    btn.disabled = true;
+    resultsPanel.classList.add('hidden');
+    list.innerHTML = '';
+
+    fetch('/api/scan')
+        .then(response => {
+            if (response.status === 503) {
+                return response.json().then(data => { throw new Error(data.message || 'Tarama yapılıyor...'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            btn.innerHTML = '🎯 BIST 100 Fırsat Tarayıcı';
+            btn.disabled = false;
+            
+            if (data.length === 0) {
+                list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için (RSI < 35 ve Yüksek AI Puanı) şartlarını sağlayan hisse bulunamadı.</p>';
+            } else {
+                data.forEach(stock => {
+                    const item = document.createElement('div');
+                    item.className = 'scanner-item';
+                    item.onclick = () => {
+                        document.getElementById('tickerInput').value = stock.ticker;
+                        analyzeTicker();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    };
+                    
+                    item.innerHTML = `
+                        <div>
+                            <div class="scanner-tic">${stock.ticker}</div>
+                            <div class="scanner-details">Fiyat: ${stock.price} TL | RSI: ${stock.rsi}</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="scanner-score">${stock.score} Puan</div>
+                            <div class="scanner-details">Hedef: ${stock.take_profit.toFixed(2)} TL</div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            }
+            resultsPanel.classList.remove('hidden');
+        })
+        .catch(err => {
+            btn.innerHTML = '🎯 BIST 100 Fırsat Tarayıcı';
+            btn.disabled = false;
+            
+            // Eğer hata 503 kaynaklıysa (arka plan botu çalışıyorsa) kullanıcıya kibarca bildir
+            if (err.message && err.message.includes('tarama')) {
+                alert('⏳ ' + err.message);
+            } else {
+                alert('Tarama sırasında sunucu hatası oluştu.');
+                console.error(err);
+            }
+        });
+}
+
+function scanTopScores() {
+    const topBtn = document.getElementById('topBtn');
+    const scanBtn = document.getElementById('scanBtn');
+    const resultsPanel = document.getElementById('scanner-results');
+    const list = document.getElementById('scanner-list');
+    
+    // UI Yükleniyor Durumu
+    topBtn.innerHTML = '🔥 Taranıyor... Lütfen bekleyin.';
+    topBtn.disabled = true;
+    scanBtn.disabled = true;
+    resultsPanel.classList.add('hidden');
+    list.innerHTML = '';
+
+    fetch('/api/top_scores')
+        .then(response => {
+            if (response.status === 503) {
+                return response.json().then(data => { throw new Error(data.message || 'Tarama yapılıyor...'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            topBtn.innerHTML = '🔥 Günün En İyileri';
+            topBtn.disabled = false;
+            scanBtn.disabled = false;
+            
+            document.querySelector('#scanner-results h3').innerText = '🔥 Günün En Yüksek Puanlı Hisseleri (Kısıtlamasız)';
+            
+            if (data.length === 0) {
+                list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için 55 puanı geçen hisse bulunamadı.</p>';
+            } else {
+                data.forEach(stock => {
+                    const item = document.createElement('div');
+                    item.className = 'scanner-item';
+                    item.onclick = () => {
+                        document.getElementById('tickerInput').value = stock.ticker;
+                        analyzeTicker();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    };
+                    
+                    item.innerHTML = `
+                        <div>
+                            <div class="scanner-tic">${stock.ticker}</div>
+                            <div class="scanner-details">Fiyat: ${stock.price} TL | Günlük: ${stock.return_1d > 0 ? '+' : ''}${(stock.return_1d * 100).toFixed(1)}%</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="scanner-score" style="color:var(--red)">${stock.score} Puan</div>
+                            <div class="scanner-details">RSI: ${stock.rsi}</div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            }
+            resultsPanel.classList.remove('hidden');
+        })
+        .catch(err => {
+            topBtn.innerHTML = '🔥 Günün En İyileri';
+            topBtn.disabled = false;
+            scanBtn.disabled = false;
+            
+            if (err.message && err.message.includes('tarama')) {
+                alert('⏳ ' + err.message);
+            } else {
+                alert('Tarama sırasında hata oluştu.');
+                console.error(err);
+            }
+        });
 }

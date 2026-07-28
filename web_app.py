@@ -58,75 +58,123 @@ def index():
 def get_hourly_prediction(tic):
     """Saatlik veri çeker ve xgb_hourly_model ile anlık (3 saatlik) tahmin yapar."""
     if not xgb_hourly_model or not hourly_features:
-        return 50.0  # Nötr
-
+        return 50.0
+    
     try:
-        # Macro data
-        dfs = {}
-        for t in ['XU100.IS', 'TRY=X']:
-            df = yf.download(t, period='7d', interval='1h', progress=False)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            if df.index.tz:
-                df.index = df.index.tz_convert('UTC').tz_localize(None)
-            dfs[t] = df
-
-        bist = dfs['XU100.IS']
-        usd = dfs['TRY=X']
-        macro = pd.DataFrame({
-            'bist_close': bist['Close'],
-            'bist_trend': bist['Close'].pct_change(),
-            'bist_volatility': (bist['High'] - bist['Low']) / bist['Close'],
-            'usd_close': usd['Close'],
-            'usd_trend': usd['Close'].pct_change()
-        }).ffill()
-
-        # Stock data
-        df = yf.download(tic, period='15d', interval='1h', progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        if df.index.tz:
-            df.index = df.index.tz_convert('UTC').tz_localize(None)
-
-        df = df.join(macro, how='left').ffill()
-        if 'usd_close' in df.columns:
-            df['Close_USD'] = df['Close'] / df['usd_close'].replace(0, np.nan)
-
-        df = add_hourly_indicators(df)
-        if df is None or df.empty:
-            return 50.0
-
-        df.columns = [c.lower() for c in df.columns]
-        latest = df.iloc[-1]
+        # Son 15 gün saatlik verisi al
+        df_h = yf.download(tic, period="15d", interval="1h", progress=False)
+        if df_h.empty: return 50.0
         
-        X = pd.DataFrame([latest[hourly_features].values], columns=hourly_features).fillna(0)
-        prob = float(xgb_hourly_model.predict_proba(X)[0][1])
+        # Sütunları düzelt (MultiIndex engelle)
+        if isinstance(df_h.columns, pd.MultiIndex):
+            df_h.columns = df_h.columns.get_level_values(0)
+            
+        df_h = add_hourly_indicators(df_h)
+        if df_h.empty: return 50.0
         
-        # Olasılığı 0-100'e yay (Model ~0.3 - ~0.65 arası veriyor)
-        MIN_P, MAX_P = 0.35, 0.65
-        scaled = (prob - MIN_P) / (MAX_P - MIN_P) * 100
-        return max(0.0, min(100.0, scaled))
+        latest_h = df_h.iloc[-1:]
+        X = latest_h[hourly_features].fillna(0)
+        
+        prob = xgb_hourly_model.predict_proba(X)[0][1]
+        
+        # Olasılığı 0-100 arasına ölçekle (0.35 ile 0.55 arasını esnet)
+        score = (prob - 0.35) * (100 / (0.55 - 0.35))
+        return max(0, min(100, score))
         
     except Exception as e:
         print(f"Saatlik tahmin hatası ({tic}): {e}")
         return 50.0
 
+def detect_smc(df):
+    """
+    Smart Money Concepts (SMC) tespit algoritması.
+    Balinaların piyasaya bıraktığı ayak izlerini (Order Block, FVG, Liquidity Sweep) arar.
+    """
+    smc_data = {
+        'ob_bullish': None,
+        'ob_bearish': None,
+        'fvg_bullish': None,
+        'fvg_bearish': None,
+        'liquidity_sweep': None,
+        'smc_comment': []
+    }
+    
+    if len(df) < 30:
+        return smc_data
+        
+    df_recent = df.tail(30).copy()
+    current_price = float(df.iloc[-1]['Close'])
+    
+    # 1. Fair Value Gap (FVG)
+    for i in range(2, len(df_recent)):
+        c1_h = float(df_recent.iloc[i-2]['High'])
+        c1_l = float(df_recent.iloc[i-2]['Low'])
+        c3_h = float(df_recent.iloc[i]['High'])
+        c3_l = float(df_recent.iloc[i]['Low'])
+        
+        # Bullish FVG (Gap up)
+        if c3_l > c1_h:
+            smc_data['fvg_bullish'] = round((c1_h + c3_l) / 2, 2)
+            
+        # Bearish FVG (Gap down)
+        if c3_h < c1_l:
+            smc_data['fvg_bearish'] = round((c1_l + c3_h) / 2, 2)
+            
+    # 2. Order Block (OB)
+    for i in range(1, len(df_recent)):
+        prev_open = float(df_recent.iloc[i-1]['Open'])
+        prev_close = float(df_recent.iloc[i-1]['Close'])
+        curr_open = float(df_recent.iloc[i]['Open'])
+        curr_close = float(df_recent.iloc[i]['Close'])
+        
+        # Hacim veya sıçrama varsa
+        if curr_open > 0:
+            curr_pct = (curr_close - curr_open) / curr_open
+            if curr_pct > 0.035 and prev_close < prev_open:
+                # Bullish OB (Son kırmızı mum)
+                smc_data['ob_bullish'] = round(float(df_recent.iloc[i-1]['Low']), 2)
+                
+            if curr_pct < -0.035 and prev_close > prev_open:
+                # Bearish OB (Son yeşil mum)
+                smc_data['ob_bearish'] = round(float(df_recent.iloc[i-1]['High']), 2)
+            
+    # 3. Liquidity Sweep
+    past_low = float(df_recent.iloc[:-3]['Low'].min())
+    past_high = float(df_recent.iloc[:-3]['High'].max())
+    recent_candle = df_recent.iloc[-1]
+    
+    if float(recent_candle['Low']) < past_low and float(recent_candle['Close']) > past_low:
+        smc_data['liquidity_sweep'] = "BULLISH_SWEEP"
+    elif float(recent_candle['High']) > past_high and float(recent_candle['Close']) < past_high:
+        smc_data['liquidity_sweep'] = "BEARISH_SWEEP"
+
+    # Yorum Üret
+    if smc_data['ob_bullish'] and current_price > smc_data['ob_bullish'] and (current_price - smc_data['ob_bullish'])/current_price < 0.08:
+        smc_data['smc_comment'].append(f"Fiyat, balinaların {smc_data['ob_bullish']} TL'deki Alıcı Emir Bloğuna (Order Block) çok yakın. Burası güçlü bir sıçrama (alım) tahtasıdır.")
+    if smc_data['liquidity_sweep'] == 'BULLISH_SWEEP':
+        smc_data['smc_comment'].append("Son düşüşte küçük yatırımcının stopları kasıtlı olarak patlatıldı (Likidite Avı) ve fiyat toparlandı. Balinalar malı topladı, yön yukarı olabilir.")
+    if smc_data['fvg_bullish'] and current_price > smc_data['fvg_bullish'] and (current_price - smc_data['fvg_bullish'])/current_price < 0.05:
+        smc_data['smc_comment'].append(f"Fiyat {smc_data['fvg_bullish']} TL'deki Dengesizlik Boşluğuna (FVG) doğru çekiliyor. Bu boşluk dolduğunda sert tepki alımı gelebilir.")
+        
+    return smc_data
 
 @app.route('/api/analyze/<ticker>')
 def analyze_ticker(ticker):
+    data, status_code = get_ticker_analysis_data(ticker)
+    return jsonify(data), status_code
+
+def get_ticker_analysis_data(ticker):
     try:
         # Ticker formatı (.IS ekle)
         tic = ticker.upper().replace(' ', '')
         if not tic.endswith('.IS') and not tic.startswith('^'):
             tic += '.IS'
             
-        # Son 200 günü çek (Hareketli ortalamalar 60 günlük veriye ihtiyaç duyar)
-        end_date = pd.Timestamp.now().strftime('%Y-%m-%d')
-        start_date = (pd.Timestamp.now() - pd.Timedelta(days=200)).strftime('%Y-%m-%d')
-        
-        df = yf.download(tic, start=start_date, end=end_date, progress=False)
+        # Son 1 yıllık (yaklaşık 250 işlem günü) veriyi çek ki hareketli ortalamalar doğru hesaplansın.
+        # "period" kullanmak bugünün canlı fiyatının (eğer borsa açıksa) dahil edilmesini garanti eder.
+        df = yf.download(tic, period="1y", progress=False)
         if df.empty:
-            return jsonify({'error': 'Hisse senedi verisi bulunamadı. Kodu kontrol edin.'}), 404
+            return {'error': 'Hisse senedi verisi bulunamadı. Kodu kontrol edin.'}, 404
             
         df = df.reset_index()
         # Sütun adları bazen MultiIndex gelebiliyor yfinance sürümüne göre, bunu düzeltelim
@@ -134,6 +182,8 @@ def analyze_ticker(ticker):
             df.columns = df.columns.get_level_values(0)
             
         # Macro veri
+        end_date = (pd.Timestamp.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        start_date = (pd.Timestamp.now() - pd.Timedelta(days=200)).strftime('%Y-%m-%d')
         macro = fetch_macro_data(start_date, end_date)
         macro = macro.reset_index()
         
@@ -143,10 +193,13 @@ def analyze_ticker(ticker):
         df = pd.merge(df, macro, on='Date', how='left')
         df.fillna(method='ffill', inplace=True)
         
+        # SMC (Akıllı Para) Analizi (Tüm veriler varken hesapla)
+        smc_data = detect_smc(df)
+        
         # İndikatörler
         df = add_technical_indicators(df)
         if df is None or df.empty:
-            return jsonify({'error': 'Teknik analiz için yeterli geçmiş veri yok.'}), 400
+            return {'error': 'Teknik analiz için yeterli geçmiş veri yok.'}, 400
             
         df['close_usd'] = df['Close'] / df['usd_close']
         
@@ -217,6 +270,12 @@ def analyze_ticker(ticker):
         s2  = round(pp - (prev_h - prev_l), 2)  # İkinci destek (~%3-4 aşağı)
         pp  = round(pp, 2)
         
+        # Camarilla (L3/H3 - Frank Ochoa 'Pivot Boss')
+        # Balinaların en sevdiği destek/direnç noktaları
+        cam_range = prev_h - prev_l
+        cam_h3 = round(prev_c + cam_range * (1.1 / 4), 2)
+        cam_l3 = round(prev_c - cam_range * (1.1 / 4), 2)
+        
         # --- MANUPLASYON ANALİZİ (Shakeout tespiti) ---
         # Eğer hisse düştüyse bu sahte mi, gerçek mi?
         daily_return = float(latest_data.get('return_1d', 0))
@@ -239,6 +298,13 @@ def analyze_ticker(ticker):
             else:
                 shakeout_signal = "BELİRSİZ 🟡"
                 shakeout_comment = "Düşüşün güç kaynağı net değil. İhtiyatlı ol."
+                
+        # --- VPA ve TTM Squeeze (Akıllı Para Sinyalleri) ---
+        if latest_data.get('vpa_anomaly', False):
+            smc_data['smc_comment'].append(f"🔍 VPA ANORMALLİĞİ: Mum boyutu çok küçük olmasına rağmen hacim devasa! Balinalar burada {current_price:.2f} seviyesinde gizlice mal topluyor (Akümülasyon) olabilir.")
+            
+        if latest_data.get('squeeze_on', False):
+            smc_data['smc_comment'].append(f"🔥 TTM SQUEEZE: Hisse son 20 günün en dar aralığına sıkıştı (Bollinger, Keltner'in içine girdi). Yakında çok sert bir yöne patlama (Breakout) bekleniyor!")
         
         # Yön tahmini: 1 Günlük model (ana) + MACD/RSI destekleyici sinyal
         bullish_points = 0
@@ -253,44 +319,35 @@ def analyze_ticker(ticker):
         display_score = active_score
         
         # --- Trading Seviyeleri (Pivot Point Bazlı DİNAMİK) ---
-        if is_bullish:
-            if current_price < s1:
-                entry = current_price
-                stop_loss = s2
-                take_profit = pp
-            elif current_price < pp:
-                entry = current_price
-                stop_loss = s1
-                take_profit = r1
-            elif current_price < r1:
-                entry = current_price
-                stop_loss = pp
-                take_profit = r2
-            elif current_price < r2:
-                entry = current_price
-                stop_loss = r1
-                take_profit = current_price * 1.04 # R2 kırılmış, yeni hedef
-            else:
-                entry = current_price
-                stop_loss = r2
-                take_profit = current_price * 1.04
+        entry = current_price
+        
+        # Sadece LONG (Alım) yönlü mantıklı seviyeler
+        if current_price <= s2:
+            stop_loss = current_price * 0.97
+            take_profit = s1
+        elif current_price <= s1:
+            stop_loss = s2
+            take_profit = pp
+        elif current_price <= pp:
+            stop_loss = s1
+            take_profit = r1
+        elif current_price <= r1:
+            stop_loss = pp
+            take_profit = r2
+        elif current_price <= r2:
+            stop_loss = r1
+            take_profit = current_price * 1.03
         else:
-            if current_price > r1:
-                entry = current_price
-                stop_loss = r2
-                take_profit = pp
-            elif current_price > pp:
-                entry = current_price
-                stop_loss = r1
-                take_profit = s1
-            elif current_price > s1:
-                entry = current_price
-                stop_loss = pp
-                take_profit = s2
-            else:
-                entry = current_price
-                stop_loss = s1
-                take_profit = current_price * 0.96
+            stop_loss = r2
+            take_profit = current_price * 1.03
+            
+        # GÜVENLİK KİLİDİ: Stop loss asla giriş fiyatından büyük veya eşit olamaz!
+        if stop_loss >= entry:
+            stop_loss = entry * 0.98
+            
+        # GÜVENLİK KİLİDİ: Take profit asla giriş fiyatından küçük veya eşit olamaz!
+        if take_profit <= entry:
+            take_profit = entry * 1.03
 
         risk   = abs(entry - stop_loss)
         reward = abs(take_profit - entry)
@@ -319,8 +376,8 @@ def analyze_ticker(ticker):
             color = "#ff003c"
             comment = f"Güçlü aşağı sinyal. Elinde bu hisse varsa {s1:.2f} TL kırılırsa kes."
             
-        return jsonify({
-            'ticker': ticker.upper(),
+        return {
+            'ticker': ticker.upper().replace('.IS', ''),
             'score': round(display_score, 1),
             'action': action,
             'color': color,
@@ -345,12 +402,78 @@ def analyze_ticker(ticker):
             'mfi': round(mfi, 1),
             'rel_volume': round(rel_volume, 2),
             'atr': round(atr, 2),
-            'date': latest_data['date'].strftime('%d %B %Y')
-        })
+            'return_1d': round(latest_data['return_1d'], 4) if 'return_1d' in latest_data else 0,
+            'date': latest_data['date'].strftime('%d %B %Y'),
+            # SMC Verileri
+            'smc_comments': smc_data['smc_comment'],
+            'cam_h3': cam_h3,
+            'cam_l3': cam_l3
+        }, 200
         
     except Exception as e:
         traceback.print_exc()
-        return jsonify({'error': f"Sunucu Hatası: {str(e)}"}), 500
+        return {'error': f"Sunucu Hatası: {str(e)}"}, 500
+
+import concurrent.futures
+import threading
+import time
+from universe import BIST_100
+
+CACHE = {
+    'scan_results': [],
+    'top_scores': [],
+    'last_updated': 0,
+    'is_scanning': False
+}
+
+def background_scanner():
+    """Arka planda her 15 dakikada bir BIST100'ü tarar ve cache'e yazar."""
+    while True:
+        try:
+            print("[CACHE BOT] Arka plan taraması başlatılıyor...")
+            CACHE['is_scanning'] = True
+            
+            results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                future_to_tic = {executor.submit(get_ticker_analysis_data, tic.replace('.IS', '')): tic for tic in BIST_100}
+                for future in concurrent.futures.as_completed(future_to_tic):
+                    try:
+                        data, status_code = future.result()
+                        if status_code == 200 and 'error' not in data:
+                            results.append(data)
+                    except Exception:
+                        pass
+            
+            # Tarama Filtreleri
+            scan_filtered = [d for d in results if 20 < d.get('rsi', 100) < 40 and d.get('score', 0) > 55 and d.get('return_1d', 0) > -0.05]
+            top_filtered = [d for d in results if d.get('score', 0) > 55]
+            
+            CACHE['scan_results'] = sorted(scan_filtered, key=lambda x: x.get('score', 0), reverse=True)
+            CACHE['top_scores'] = sorted(top_filtered, key=lambda x: x.get('score', 0), reverse=True)[:10]
+            CACHE['last_updated'] = time.time()
+            CACHE['is_scanning'] = False
+            
+            print("[CACHE BOT] Tarama bitti. Veriler hazır.")
+        except Exception as e:
+            print(f"[CACHE BOT] Hata: {e}")
+            CACHE['is_scanning'] = False
+            
+        time.sleep(900) # 15 dakika (900 saniye) bekle
+
+# Flask başlamadan önce arka plan botunu çalıştır
+threading.Thread(target=background_scanner, daemon=True).start()
+
+@app.route('/api/scan')
+def scan_opportunities():
+    if not CACHE['scan_results'] and CACHE['last_updated'] == 0:
+        return jsonify({'status': 'scanning', 'message': 'Yapay Zeka BIST100 taramasını yapıyor, lütfen 15 saniye sonra tekrar deneyin.'}), 503
+    return jsonify(CACHE['scan_results'])
+
+@app.route('/api/top_scores')
+def top_scores():
+    if not CACHE['top_scores'] and CACHE['last_updated'] == 0:
+        return jsonify({'status': 'scanning', 'message': 'Yapay Zeka BIST100 taramasını yapıyor, lütfen 15 saniye sonra tekrar deneyin.'}), 503
+    return jsonify(CACHE['top_scores'])
 
 @app.route('/api/recommendations')
 def get_recommendations():

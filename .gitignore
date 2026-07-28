@@ -12,5 +12,5 @@ data/
 .idea/
 tv_tickers.txt
 ml_data/
-ml_models/
-
+ml_models/*
+!ml_models/*.pkl
