@@ -154,133 +154,142 @@ function animateValue(id, start, end, duration) {
     }, stepTime);
 }
 
-function scanOpportunities() {
+async function fetchAllChunks(progressBtn, totalTickers = 100) {
+    let allResults = [];
+    let limit = 10; // Her istekte 10 hisse tara (Render timeout'a girmesin diye)
+    
+    for (let start = 0; start < totalTickers; start += limit) {
+        progressBtn.innerHTML = `⏳ Taranıyor (${start} / ${totalTickers})... Lütfen bekleyin.`;
+        try {
+            let res = await fetch(`/api/scan_chunk?start=${start}&limit=${limit}`);
+            if (!res.ok) throw new Error('Sunucu hatası');
+            let data = await res.json();
+            if (data.results) {
+                allResults.push(...data.results);
+            }
+        } catch (e) {
+            console.error("Parça tarama hatası:", e);
+        }
+    }
+    return allResults;
+}
+
+async function scanOpportunities() {
     const btn = document.getElementById('scanBtn');
     const resultsPanel = document.getElementById('scanner-results');
     const list = document.getElementById('scanner-list');
     
-    // UI Yükleniyor Durumu
-    btn.innerHTML = '⏳ Taranıyor (100 Hisse)... Lütfen bekleyin.';
     btn.disabled = true;
     resultsPanel.classList.add('hidden');
     list.innerHTML = '';
 
-    fetch('/api/scan')
-        .then(response => {
-            if (response.status === 503) {
-                return response.json().then(data => { throw new Error(data.message || 'Tarama yapılıyor...'); });
-            }
-            return response.json();
-        })
-        .then(data => {
-            btn.innerHTML = '🎯 BIST 100 Fırsat Tarayıcı';
-            btn.disabled = false;
-            
-            if (data.length === 0) {
-                list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için (RSI < 35 ve Yüksek AI Puanı) şartlarını sağlayan hisse bulunamadı.</p>';
-            } else {
-                data.forEach(stock => {
-                    const item = document.createElement('div');
-                    item.className = 'scanner-item';
-                    item.onclick = () => {
-                        document.getElementById('tickerInput').value = stock.ticker;
-                        analyzeTicker();
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                    };
-                    
-                    item.innerHTML = `
-                        <div>
-                            <div class="scanner-tic">${stock.ticker}</div>
-                            <div class="scanner-details">Fiyat: ${stock.price} TL | RSI: ${stock.rsi}</div>
-                        </div>
-                        <div style="text-align:right">
-                            <div class="scanner-score">${stock.score} Puan</div>
-                            <div class="scanner-details">Hedef: ${stock.take_profit.toFixed(2)} TL</div>
-                        </div>
-                    `;
-                    list.appendChild(item);
-                });
-            }
-            resultsPanel.classList.remove('hidden');
-        })
-        .catch(err => {
-            btn.innerHTML = '🎯 BIST 100 Fırsat Tarayıcı';
-            btn.disabled = false;
-            
-            // Eğer hata 503 kaynaklıysa (arka plan botu çalışıyorsa) kullanıcıya kibarca bildir
-            if (err.message && err.message.includes('tarama')) {
-                alert('⏳ ' + err.message);
-            } else {
-                alert('Tarama sırasında sunucu hatası oluştu.');
-                console.error(err);
-            }
+    try {
+        let allData = await fetchAllChunks(btn);
+        
+        // Fırsat Filtresi (RSI < 40, Score > 55, Düşüş > -%5)
+        let data = allData.filter(d => {
+            let rsi = d.rsi || 100;
+            let score = d.score || 0;
+            let ret = d.return_1d || 0;
+            return rsi > 20 && rsi < 40 && score > 55 && ret > -0.05;
         });
+        
+        // Puanlara göre sırala
+        data.sort((a, b) => (b.score || 0) - (a.score || 0));
+        if (data.length === 0) {
+            list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için (RSI < 35 ve Yüksek AI Puanı) şartlarını sağlayan hisse bulunamadı.</p>';
+        } else {
+            data.forEach(stock => {
+                const item = document.createElement('div');
+                item.className = 'scanner-item';
+                item.onclick = () => {
+                    document.getElementById('tickerInput').value = stock.ticker;
+                    analyzeTicker();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                
+                item.innerHTML = `
+                    <div>
+                        <div class="scanner-tic">${stock.ticker}</div>
+                        <div class="scanner-details">Fiyat: ${stock.price} TL | RSI: ${stock.rsi}</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="scanner-score">${stock.score} Puan</div>
+                        <div class="scanner-details">Hedef: ${stock.take_profit.toFixed(2)} TL</div>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+        resultsPanel.classList.remove('hidden');
+    } catch (err) {
+        alert('Tarama sırasında hata oluştu.');
+        console.error(err);
+    } finally {
+        btn.innerHTML = '🎯 BIST 100 Fırsat Tarayıcı';
+        btn.disabled = false;
+    }
 }
 
-function scanTopScores() {
+async function scanTopScores() {
     const topBtn = document.getElementById('topBtn');
     const scanBtn = document.getElementById('scanBtn');
     const resultsPanel = document.getElementById('scanner-results');
     const list = document.getElementById('scanner-list');
     
-    // UI Yükleniyor Durumu
-    topBtn.innerHTML = '🔥 Taranıyor... Lütfen bekleyin.';
     topBtn.disabled = true;
     scanBtn.disabled = true;
     resultsPanel.classList.add('hidden');
     list.innerHTML = '';
 
-    fetch('/api/top_scores')
-        .then(response => {
-            if (response.status === 503) {
-                return response.json().then(data => { throw new Error(data.message || 'Tarama yapılıyor...'); });
-            }
-            return response.json();
-        })
-        .then(data => {
-            topBtn.innerHTML = '🔥 Günün En İyileri';
-            topBtn.disabled = false;
-            scanBtn.disabled = false;
-            
-            document.querySelector('#scanner-results h3').innerText = '🔥 Günün En Yüksek Puanlı Hisseleri (Kısıtlamasız)';
-            
-            if (data.length === 0) {
-                list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için 55 puanı geçen hisse bulunamadı.</p>';
-            } else {
-                data.forEach(stock => {
-                    const item = document.createElement('div');
-                    item.className = 'scanner-item';
-                    item.onclick = () => {
-                        document.getElementById('tickerInput').value = stock.ticker;
-                        analyzeTicker();
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                    };
-                    
-                    item.innerHTML = `
-                        <div>
-                            <div class="scanner-tic">${stock.ticker}</div>
-                            <div class="scanner-details">Fiyat: ${stock.price} TL | Günlük: ${stock.return_1d > 0 ? '+' : ''}${(stock.return_1d * 100).toFixed(1)}%</div>
-                        </div>
-                        <div style="text-align:right">
-                            <div class="scanner-score" style="color:var(--red)">${stock.score} Puan</div>
-                            <div class="scanner-details">RSI: ${stock.rsi}</div>
-                        </div>
-                    `;
-                    list.appendChild(item);
-                });
-            }
-            resultsPanel.classList.remove('hidden');
-        })
-        .catch(err => {
-            topBtn.innerHTML = '🔥 Günün En İyileri';
-            topBtn.disabled = false;
-            scanBtn.disabled = false;
-            
-            if (err.message && err.message.includes('tarama')) {
-                alert('⏳ ' + err.message);
-            } else {
-                alert('Tarama sırasında hata oluştu.');
-                console.error(err);
-            }
-        });
+    try {
+        let allData = await fetchAllChunks(topBtn);
+        
+        // En iyiler filtresi (Score > 55)
+        let data = allData.filter(d => (d.score || 0) > 55);
+        
+        // Puanlara göre sırala ve ilk 10'u al
+        data.sort((a, b) => (b.score || 0) - (a.score || 0));
+        data = data.slice(0, 10);
+
+        topBtn.innerHTML = '🔥 Günün En İyileri';
+        topBtn.disabled = false;
+        scanBtn.disabled = false;
+        
+        document.querySelector('#scanner-results h3').innerText = '🔥 Günün En Yüksek Puanlı Hisseleri (Kısıtlamasız)';
+        
+        if (data.length === 0) {
+            list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için 55 puanı geçen hisse bulunamadı.</p>';
+        } else {
+            data.forEach(stock => {
+                const item = document.createElement('div');
+                item.className = 'scanner-item';
+                item.onclick = () => {
+                    document.getElementById('tickerInput').value = stock.ticker;
+                    analyzeTicker();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                
+                item.innerHTML = `
+                    <div>
+                        <div class="scanner-tic">${stock.ticker}</div>
+                        <div class="scanner-details">Fiyat: ${stock.price} TL | Günlük: ${stock.return_1d > 0 ? '+' : ''}${(stock.return_1d * 100).toFixed(1)}%</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="scanner-score" style="color:var(--red)">${stock.score} Puan</div>
+                        <div class="scanner-details">RSI: ${stock.rsi}</div>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+        resultsPanel.classList.remove('hidden');
+    } catch (err) {
+        alert('Tarama sırasında hata oluştu.');
+        console.error(err);
+    } finally {
+        topBtn.innerHTML = '🔥 Günün En İyileri';
+        topBtn.disabled = false;
+        scanBtn.disabled = false;
+    }
 }
