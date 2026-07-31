@@ -441,15 +441,15 @@ def background_scanner():
             CACHE['is_scanning'] = True
             
             results = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                future_to_tic = {executor.submit(get_ticker_analysis_data, tic.replace('.IS', '')): tic for tic in BIST_100}
-                for future in concurrent.futures.as_completed(future_to_tic):
-                    try:
-                        data, status_code = future.result()
-                        if status_code == 200 and 'error' not in data:
-                            results.append(data)
-                    except Exception:
-                        pass
+            for tic in BIST_100:
+                try:
+                    data, status_code = get_ticker_analysis_data(tic.replace('.IS', ''))
+                    if status_code == 200 and 'error' not in data:
+                        results.append(data)
+                except Exception:
+                    pass
+                # Sunucunun donmaması (Kullanıcının yaptığı işlemlere CPU kalması) için ufak bir nefes payı:
+                time.sleep(0.5)
             
             # Tarama Filtreleri
             scan_filtered = [d for d in results if 20 < d.get('rsi', 100) < 40 and d.get('score', 0) > 55 and d.get('return_1d', 0) > -0.05]
