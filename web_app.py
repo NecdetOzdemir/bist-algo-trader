@@ -434,7 +434,7 @@ def background_scanner():
             CACHE['is_scanning'] = True
             
             results = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_to_tic = {executor.submit(get_ticker_analysis_data, tic.replace('.IS', '')): tic for tic in BIST_100}
                 for future in concurrent.futures.as_completed(future_to_tic):
                     try:
