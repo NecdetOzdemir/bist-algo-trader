@@ -3,7 +3,14 @@ import sys
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import requests
 from flask import Flask, jsonify, request, render_template
+
+# YFinance için sahte tarayıcı (Cloud IP'lerin banlanmasını engeller)
+yf_session = requests.Session()
+yf_session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+})
 from flask_cors import CORS
 import pickle
 import traceback
@@ -62,7 +69,7 @@ def get_hourly_prediction(tic):
     
     try:
         # Son 15 gün saatlik verisi al
-        df_h = yf.download(tic, period="15d", interval="1h", progress=False)
+        df_h = yf.download(tic, period="15d", interval="1h", progress=False, session=yf_session)
         if df_h.empty: return 50.0
         
         # Sütunları düzelt (MultiIndex engelle)
@@ -172,7 +179,7 @@ def get_ticker_analysis_data(ticker):
             
         # Son 1 yıllık (yaklaşık 250 işlem günü) veriyi çek ki hareketli ortalamalar doğru hesaplansın.
         # "period" kullanmak bugünün canlı fiyatının (eğer borsa açıksa) dahil edilmesini garanti eder.
-        df = yf.download(tic, period="1y", progress=False)
+        df = yf.download(tic, period="1y", progress=False, session=yf_session)
         if df.empty:
             return {'error': 'Hisse senedi verisi bulunamadı. Kodu kontrol edin.'}, 404
             
