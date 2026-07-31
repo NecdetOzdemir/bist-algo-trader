@@ -467,20 +467,47 @@ def background_scanner():
             
         time.sleep(900) # 15 dakika (900 saniye) bekle
 
-# Flask başlamadan önce arka plan botunu çalıştır
-threading.Thread(target=background_scanner, daemon=True).start()
+# GÜÇLÜ SUNUCUYA GEÇENE KADAR ARKA PLAN BOTUNU DEVRE DIŞI BIRAKTIK
+# threading.Thread(target=background_scanner, daemon=True).start()
 
 @app.route('/api/scan')
 def scan_opportunities():
-    if not CACHE['scan_results'] and CACHE['last_updated'] == 0:
-        return jsonify({'status': 'scanning', 'message': 'Yapay Zeka BIST100 taramasını yapıyor, lütfen 15 saniye sonra tekrar deneyin.'}), 503
-    return jsonify(CACHE['scan_results'])
+    results = []
+    # Ücretsiz sunucuda arka plan botunu kapattığımız için, butona basılınca canlı tarama yapacağız.
+    # Yine de Render'ı yormamak için max_workers=3 yapıyoruz.
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_to_tic = {executor.submit(get_ticker_analysis_data, tic.replace('.IS', '')): tic for tic in BIST_100}
+        for future in concurrent.futures.as_completed(future_to_tic):
+            try:
+                data, status_code = future.result()
+                if status_code == 200 and 'error' not in data:
+                    rsi_val = data.get('rsi', 100)
+                    if 20 < rsi_val < 40 and data.get('score', 0) > 55 and data.get('return_1d', 0) > -0.05:
+                        results.append(data)
+            except Exception:
+                pass
+                
+    results = sorted(results, key=lambda x: x.get('score', 0), reverse=True)
+    return jsonify(results)
 
 @app.route('/api/top_scores')
 def top_scores():
-    if not CACHE['top_scores'] and CACHE['last_updated'] == 0:
-        return jsonify({'status': 'scanning', 'message': 'Yapay Zeka BIST100 taramasını yapıyor, lütfen 15 saniye sonra tekrar deneyin.'}), 503
-    return jsonify(CACHE['top_scores'])
+    results = []
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_to_tic = {executor.submit(get_ticker_analysis_data, tic.replace('.IS', '')): tic for tic in BIST_100}
+        for future in concurrent.futures.as_completed(future_to_tic):
+            try:
+                data, status_code = future.result()
+                if status_code == 200 and 'error' not in data:
+                    if data.get('score', 0) > 55:
+                        results.append(data)
+            except Exception:
+                pass
+                
+    results = sorted(results, key=lambda x: x.get('score', 0), reverse=True)[:10]
+    return jsonify(results)
 
 @app.route('/api/recommendations')
 def get_recommendations():
