@@ -267,15 +267,44 @@ def get_ticker_analysis_data(ticker):
         sma50  = float(df['close'].rolling(50).mean().iloc[-1])
         sma200_series = df['close'].rolling(200).mean()
         sma200 = float(sma200_series.iloc[-1]) if len(df) >= 200 else sma50
-        # Trend durumu
         if current_price > sma50 and sma50 > sma200:
-            sma_trend = 'strong_up'   # Fiyat 50 üstü, 50 de 200 üstü → Güçlü yükseliş
+            sma_trend = 'strong_up'
         elif current_price > sma50:
-            sma_trend = 'up'          # Fiyat 50 üstünde ama 50 < 200 → Zayıf yükseliş
+            sma_trend = 'up'
         else:
-            sma_trend = 'down'        # Fiyat 50 altında → Düşüş trendi
+            sma_trend = 'down'
 
-        # Sabit %2 Stop / %4 Kar (Sabah Planı için)
+        # ============================================================
+        # KUANTUM CERCEVE — Composite Score + ATR Stop + EV + Kelly
+        # ============================================================
+        comp = 0
+        if current_price > sma200: comp += 1
+        if current_price > sma50:  comp += 1
+        if sma50 > sma200:         comp += 1
+        if 40 <= rsi <= 65:        comp += 2
+        elif 30 <= rsi < 40:       comp += 1
+        if macd > macd_signal:     comp += 1
+        if rel_volume >= 1.20:     comp += 1
+        ai_contrib = min(3, int(active_score / 100 * 3 + 0.5))
+        comp += ai_contrib
+        # comp: 0-10 arasi
+
+        # ATR Tabanli Stop/Hedef (RR: 1:2)
+        atr_stop = round(current_price - 1.5 * atr, 2)
+        atr_tp   = round(current_price + 3.0 * atr, 2)
+        atr_stop_pct = round((current_price - atr_stop) / current_price * 100, 2)
+        atr_tp_pct   = round((atr_tp - current_price) / current_price * 100, 2)
+
+        # Expected Value (EV)
+        win_rate  = min(0.60, max(0.40, active_score / 100))
+        loss_rate = 1.0 - win_rate
+        ev_pct = round(win_rate * atr_tp_pct - loss_rate * atr_stop_pct, 2)
+
+        # Kelly Kriteri (Yarim Kelly)
+        kelly_full = (win_rate * 2.0 - loss_rate) / 2.0
+        kelly_half = max(0.0, round(kelly_full * 0.5 * 100, 1))
+
+        # Sabit %2/%4 (yedek)
         plan_stop = round(current_price * 0.98, 2)
         plan_tp   = round(current_price * 1.04, 2)
         
@@ -439,6 +468,15 @@ def get_ticker_analysis_data(ticker):
             'sma_trend': sma_trend,
             'plan_stop': plan_stop,
             'plan_tp': plan_tp,
+            # Kuantum Çerçeve
+            'composite_score': comp,           # 0-10 arası çok faktörlü puan
+            'atr_stop': atr_stop,              # ATR tabanlı stop fiyatı
+            'atr_tp': atr_tp,                  # ATR tabanlı hedef fiyat
+            'atr_stop_pct': atr_stop_pct,      # Stop mesafesi (%)
+            'atr_tp_pct': atr_tp_pct,          # Hedef mesafesi (%)
+            'ev_pct': ev_pct,                  # Beklenen Değer (EV) %
+            'kelly_half': kelly_half,          # Önerilen pozisyon büyüklüğü (Yarım Kelly %)
+            'win_rate_est': round(win_rate * 100, 1),  # Tahmini kazanma olasılığı %
         }, 200
         
     except Exception as e:
