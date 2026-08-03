@@ -321,9 +321,10 @@ async function scanMorningPlan() {
     try {
         let allData = await fetchAllChunks(btn);
 
-        // Filtre: SMA50 üzerinde + Composite Score >= 5 + EV pozitif
+        // BACKTEST KANITLADI: Sadece GÜÇLü TREND (SMA50 > SMA200 ve Fiyat > SMA50)
+        // Strong_up: EV +%0.66 (10 gün) | up: daha düşük performans
         let filtered = allData.filter(d =>
-            (d.sma_trend === 'strong_up' || d.sma_trend === 'up') &&
+            d.sma_trend === 'strong_up' &&
             (d.composite_score || 0) >= 5 &&
             (d.ev_pct || 0) > 0
         );
@@ -336,7 +337,7 @@ async function scanMorningPlan() {
         morningStocks = filtered.slice(0, 10);
 
         if (morningStocks.length === 0) {
-            list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Bugün kriterleri karşılayan hisse bulunamadı. (SMA Trend ↑ + Comp ≥5 + EV>0)</p>';
+            list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Bugün kriterleri karşılayan hisse bulunamadı.<br><small>Gereken: SMA50 > SMA200 (Güçlü Trend) + Comp ≥5 + EV>0</small></p>';
             return;
         }
         renderMorningList();
