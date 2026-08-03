@@ -334,7 +334,7 @@ async function scanMorningPlan() {
                 return (b.composite_score || 0) - (a.composite_score || 0);
             return (b.ev_pct || 0) - (a.ev_pct || 0);
         });
-        morningStocks = filtered.slice(0, 10);
+        morningStocks = filtered.slice(0, 5);  // En iyi 5 — odaklanmak için
 
         if (morningStocks.length === 0) {
             list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Bugün kriterleri karşılayan hisse bulunamadı.<br><small>Gereken: SMA50 > SMA200 (Güçlü Trend) + Comp ≥5 + EV>0</small></p>';
