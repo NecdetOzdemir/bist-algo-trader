@@ -261,6 +261,23 @@ def get_ticker_analysis_data(ticker):
         macd_signal = float(latest_data['macd_signal'])
         mfi = float(latest_data['mfi'])
         rel_volume = float(latest_data.get('rel_volume_10', 1.0))
+
+        # --- SMA Hesapla ---
+        sma20  = float(df['close'].rolling(20).mean().iloc[-1])
+        sma50  = float(df['close'].rolling(50).mean().iloc[-1])
+        sma200_series = df['close'].rolling(200).mean()
+        sma200 = float(sma200_series.iloc[-1]) if len(df) >= 200 else sma50
+        # Trend durumu
+        if current_price > sma50 and sma50 > sma200:
+            sma_trend = 'strong_up'   # Fiyat 50 üstü, 50 de 200 üstü → Güçlü yükseliş
+        elif current_price > sma50:
+            sma_trend = 'up'          # Fiyat 50 üstünde ama 50 < 200 → Zayıf yükseliş
+        else:
+            sma_trend = 'down'        # Fiyat 50 altında → Düşüş trendi
+
+        # Sabit %2 Stop / %4 Kar (Sabah Planı için)
+        plan_stop = round(current_price * 0.98, 2)
+        plan_tp   = round(current_price * 1.04, 2)
         
         # --- PIVOT POINT SEVİYELERİ (Bir önceki günün OHLC'siyle) ---
         # Tüm BIST profesyonelleri bu seviyelere bakar.
@@ -414,7 +431,14 @@ def get_ticker_analysis_data(ticker):
             # SMC Verileri
             'smc_comments': smc_data['smc_comment'],
             'cam_h3': cam_h3,
-            'cam_l3': cam_l3
+            'cam_l3': cam_l3,
+            # SMA ve Sabah Planı
+            'sma20': round(sma20, 2),
+            'sma50': round(sma50, 2),
+            'sma200': round(sma200, 2),
+            'sma_trend': sma_trend,
+            'plan_stop': plan_stop,
+            'plan_tp': plan_tp,
         }, 200
         
     except Exception as e:

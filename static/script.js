@@ -293,3 +293,88 @@ async function scanTopScores() {
         scanBtn.disabled = false;
     }
 }
+
+// ========================
+// ☀️ SABAH PLANI
+// ========================
+
+let morningStocks = [];
+
+function trendBadge(trend) {
+    if (trend === 'strong_up') return '<span style="background:#00ffa322;color:#00ffa3;padding:2px 8px;border-radius:20px;font-size:0.75rem;">📈 Güçlü Trend</span>';
+    if (trend === 'up')        return '<span style="background:#00d2ff22;color:#00d2ff;padding:2px 8px;border-radius:20px;font-size:0.75rem;">↗️ Yükselen Trend</span>';
+    return '<span style="background:#ff4a6e22;color:#ff4a6e;padding:2px 8px;border-radius:20px;font-size:0.75rem;">↘️ Düşen Trend</span>';
+}
+
+async function scanMorningPlan() {
+    const btn   = document.getElementById('morningBtn');
+    const panel = document.getElementById('morning-panel');
+    const list  = document.getElementById('morning-list');
+    btn.disabled = true;
+    panel.classList.remove('hidden');
+    list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Taranıyor, lütfen bekleyin...</p>';
+    try {
+        let allData = await fetchAllChunks(btn);
+        let filtered = allData.filter(d => (d.sma_trend === 'strong_up' || d.sma_trend === 'up') && (d.score || 0) > 50);
+        filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
+        morningStocks = filtered.slice(0, 10);
+        if (morningStocks.length === 0) {
+            list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Bugün SMA50 üzerinde yüksek puanlı hisse bulunamadı.</p>';
+            return;
+        }
+        renderMorningList();
+    } catch (err) {
+        list.innerHTML = '<p style="color:#ff4a6e;text-align:center;">Tarama sırasında hata oluştu.</p>';
+        console.error(err);
+    } finally {
+        btn.innerHTML = '☀️ Sabah Planım';
+        btn.disabled = false;
+    }
+}
+
+function renderMorningList() {
+    const list     = document.getElementById('morning-list');
+    const budget   = parseFloat(document.getElementById('budgetInput').value) || 0;
+    const perStock = budget > 0 ? (budget / morningStocks.length).toFixed(0) : null;
+    document.getElementById('budget-info').innerText = perStock
+        ? `→ ${morningStocks.length} hisseye eşit böldüğünde her birinden ${Number(perStock).toLocaleString('tr-TR')} TL`
+        : '';
+    list.innerHTML = '';
+    morningStocks.forEach((s, i) => {
+        const lots     = perStock && s.price > 0 ? Math.floor(perStock / s.price) : null;
+        const lotsInfo = lots !== null ? `<div style="color:#ffd200;font-size:0.8rem;margin-top:4px;">Tahmini lot: ~${lots} adet</div>` : '';
+        const card = document.createElement('div');
+        card.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:all 0.2s;';
+        card.onmouseenter = () => card.style.background = 'rgba(255,255,255,0.09)';
+        card.onmouseleave = () => card.style.background = 'rgba(255,255,255,0.05)';
+        card.onclick = () => { document.getElementById('tickerInput').value = s.ticker; analyzeTicker(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <span style="font-size:1.1rem;font-weight:700;color:#fff;">${i+1}. ${s.ticker}</span>
+                    &nbsp;${trendBadge(s.sma_trend)}
+                    <div style="color:#a0aec0;font-size:0.83rem;margin-top:4px;">
+                        Fiyat: <b style="color:#fff;">${s.price} TL</b> &nbsp;|&nbsp; SMA50: <b>${s.sma50} TL</b> &nbsp;|&nbsp; SMA200: <b>${s.sma200} TL</b>
+                    </div>${lotsInfo}
+                </div>
+                <div style="text-align:right;"><div style="font-size:1.3rem;font-weight:800;color:#ffd200;">${s.score.toFixed(1)}</div><div style="font-size:0.7rem;color:#a0aec0;">AI PUAN</div></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                <div style="flex:1;background:rgba(0,255,163,0.1);border:1px solid rgba(0,255,163,0.25);border-radius:8px;padding:8px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#a0aec0;">✅ KAR HEDEFİ (+%4)</div>
+                    <div style="font-size:1rem;font-weight:700;color:#00ffa3;">${s.plan_tp} TL</div>
+                </div>
+                <div style="flex:1;background:rgba(255,74,110,0.1);border:1px solid rgba(255,74,110,0.25);border-radius:8px;padding:8px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#a0aec0;">🛑 STOP-LOSS (-%2)</div>
+                    <div style="font-size:1rem;font-weight:700;color:#ff4a6e;">${s.plan_stop} TL</div>
+                </div>
+                <div style="flex:1;background:rgba(255,210,0,0.08);border:1px solid rgba(255,210,0,0.2);border-radius:8px;padding:8px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#a0aec0;">⚖️ KAR/ZARAR</div>
+                    <div style="font-size:1rem;font-weight:700;color:#ffd200;">1:2</div>
+                </div>
+            </div>`;
+        list.appendChild(card);
+    });
+}
+
+function recalcBudget() { if (morningStocks.length > 0) renderMorningList(); }

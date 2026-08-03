@@ -29,9 +29,24 @@
             <div class="scanner-group">
                 <button id="scanBtn" onclick="scanOpportunities()" class="scan-button">🎯 BIST 100 Fırsat Tarayıcı</button>
                 <button id="topBtn" onclick="scanTopScores()" class="scan-button" style="background: linear-gradient(135deg, #ff7b00 0%, #ff003c 100%); margin-top: 10px; box-shadow: 0 4px 15px rgba(255, 0, 60, 0.3);">🔥 Günün En İyileri</button>
+                <button id="morningBtn" onclick="scanMorningPlan()" class="scan-button" style="background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%); color: #1a1a2e; font-weight: 700; margin-top: 10px; box-shadow: 0 4px 15px rgba(255, 210, 0, 0.4);">☀️ Sabah Planım</button>
             </div>
         </div>
         
+        <!-- Sabah Planı Sonuç Paneli -->
+        <div id="morning-panel" class="hidden glass-panel scanner-panel">
+            <h3>☀️ Sabah Planım — SMA Trend Filtreli En İyi Hisseler</h3>
+            <p style="font-size:0.85rem; color:#a0aec0; margin-bottom:12px;">Fiyatı SMA50 üzerinde olan, AI puanı yüksek hisseler. Sabit <span style="color:#00ffa3">+%4 Kar</span> / <span style="color:#ff4a6e">-%2 Stop</span> ile.</p>
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+                <label style="color:#a0aec0; font-size:0.9rem;">Toplam Paran (TL):</label>
+                <input id="budgetInput" type="number" placeholder="10000" min="100" step="100"
+                    style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:8px 14px; color:#fff; font-size:1rem; width:140px;"
+                    oninput="recalcBudget()">
+                <span id="budget-info" style="color:#a0aec0; font-size:0.85rem;"></span>
+            </div>
+            <div id="morning-list"></div>
+        </div>
+
         <!-- Tarayıcı Sonuçları -->
         <div id="scanner-results" class="hidden glass-panel scanner-panel">
             <h3>🎯 Günün Fırsatları (RSI < 35 & AI Skor > 55)</h3>
