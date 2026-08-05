@@ -3,173 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIST AI Trader | Yapay Zeka Borsa Asistanı</title>
-    <meta name="description" content="Yapay zeka destekli BIST hisse analiz ve trading sinyal sistemi">
+    <title>BIST Tarayıcı — Teknik Analiz</title>
+    <meta name="description" content="BIST100 hisselerini gerçek zamanlı teknik analiz ile tara. Pivot noktaları, skor ve alım sinyalleri.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="background-orbs">
-        <div class="orb orb-1"></div>
-        <div class="orb orb-2"></div>
+    <!-- HEADER -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon">📈</span>
+                <span class="logo-text">BIST<b>Tarayıcı</b></span>
+            </div>
+            <div class="header-meta">
+                <span class="delay-badge">⏱ 15 dk gecikmeli</span>
+                <span id="scan-time" class="scan-time"></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- CONTROLS -->
+    <section class="controls">
+        <div class="controls-inner">
+            <!-- Tarama Butonu -->
+            <button id="scanBtn" class="scan-btn" onclick="startScan()">
+                <span class="btn-icon">🔍</span>
+                <span class="btn-text">Sabah Taraması</span>
+            </button>
+
+            <!-- Bütçe -->
+            <div class="budget-wrap">
+                <label class="ctrl-label">💰 Bütçe (TL)</label>
+                <input id="budgetInput" type="number" class="ctrl-input" placeholder="50000"
+                    min="1000" step="1000" oninput="updateLots()">
+            </div>
+
+            <!-- Hisse Sayısı -->
+            <div class="budget-wrap">
+                <label class="ctrl-label">📦 Hisse Sayısı</label>
+                <input id="slotInput" type="number" class="ctrl-input" placeholder="5"
+                    min="1" max="20" step="1" value="5" oninput="updateLots()">
+            </div>
+        </div>
+
+        <!-- Filtre Butonları -->
+        <div class="filters" id="filters" style="display:none;">
+            <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">
+                Tümü
+            </button>
+            <button class="filter-btn" data-filter="support" onclick="setFilter('support',this)">
+                🟢 Destek Bölgesi
+            </button>
+            <button class="filter-btn" data-filter="pivot_above" onclick="setFilter('pivot_above',this)">
+                ✅ Pivot Üstü
+            </button>
+            <button class="filter-btn" data-filter="strong" onclick="setFilter('strong',this)">
+                ⚡ Güçlü Trend
+            </button>
+            <button class="filter-btn" data-filter="high_score" onclick="setFilter('high_score',this)">
+                🏆 Skor ≥ 6
+            </button>
+        </div>
+    </section>
+
+    <!-- PROGRESS BAR -->
+    <div id="progress-wrap" class="progress-wrap" style="display:none;">
+        <div class="progress-bar-bg">
+            <div id="progress-bar" class="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <span id="progress-text" class="progress-text">Taranıyor...</span>
     </div>
 
-    <div class="container">
-        <header>
-            <h1>🧠 BIST AI <span>Trader</span></h1>
-            <p>Yapay Zeka Destekli Trading Sinyal Sistemi</p>
-        </header>
-
-        <!-- Arama ve Tarayıcı -->
-        <div class="search-section glass-panel">
-            <div class="input-group">
-                <input type="text" id="tickerInput" placeholder="Hisse kodu gir: THYAO, TUPRS, SASA..." autocomplete="off">
-                <button id="analyzeBtn" onclick="analyzeTicker()">Analiz Et ▶</button>
-            </div>
-            <div class="scanner-group">
-                <button id="scanBtn" onclick="scanOpportunities()" class="scan-button">🎯 BIST 100 Fırsat Tarayıcı</button>
-                <button id="topBtn" onclick="scanTopScores()" class="scan-button" style="background: linear-gradient(135deg, #ff7b00 0%, #ff003c 100%); margin-top: 10px; box-shadow: 0 4px 15px rgba(255, 0, 60, 0.3);">🔥 Günün En İyileri</button>
-                <button id="morningBtn" onclick="scanMorningPlan()" class="scan-button" style="background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%); color: #1a1a2e; font-weight: 700; margin-top: 10px; box-shadow: 0 4px 15px rgba(255, 210, 0, 0.4);">☀️ Sabah Planım</button>
-            </div>
-        </div>
-        
-        <!-- Sabah Planı Sonuç Paneli -->
-        <div id="morning-panel" class="hidden glass-panel scanner-panel">
-            <h3>☀️ Sabah Planım — Günün En İyi 5 Hissesi</h3>
-            <p style="font-size:0.85rem; color:#a0aec0; margin-bottom:4px;">Filtre: <b style="color:#00ffa3">SMA50 &gt; SMA200</b> (Güçlü Trend) + Composite ≥5 + EV &gt; 0</p>
-            <p style="font-size:0.8rem; color:#ffd200; margin-bottom:12px;">📊 Backtest sonucu (2024-2025): <b>EV +%0.66/işlem</b> · Stop: ATR×1.5 · Hedef: ATR×3 · Önerilen tutma: <b>10-15 gün</b></p>
-
-            <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
-                <label style="color:#a0aec0; font-size:0.9rem;">Toplam Paran (TL):</label>
-                <input id="budgetInput" type="number" placeholder="10000" min="100" step="100"
-                    style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:8px 14px; color:#fff; font-size:1rem; width:140px;"
-                    oninput="recalcBudget()">
-                <span id="budget-info" style="color:#a0aec0; font-size:0.85rem;"></span>
-            </div>
-            <div id="morning-list"></div>
-        </div>
-
-        <!-- Tarayıcı Sonuçları -->
-        <div id="scanner-results" class="hidden glass-panel scanner-panel">
-            <h3>🎯 Günün Fırsatları (RSI < 35 & AI Skor > 55)</h3>
-            <div id="scanner-list"></div>
-        </div>
-        
-        <!-- Yükleniyor -->
-        <div id="loading" class="hidden">
-            <div class="spinner"></div>
-            <p>Yapay Zeka Analiz Ediyor...</p>
-        </div>
-
-        <!-- Sonuç Bölümü -->
-        <div id="result-section" class="hidden">
-            
-            <!-- Üst: Skor Kartı -->
-            <div class="score-card glass-panel" id="score-container">
-                <div class="score-header">
-                    <div>
-                        <h2 id="tic-name">THYAO</h2>
-                        <span id="price-tag" class="price-tag">0.00 TL</span>
-                        <span id="date-tag" class="date-tag"></span>
-                    </div>
-                    <div class="score-circle">
-                        <span id="score-value">0</span>
-                        <small>AI Skoru</small>
-                    </div>
-                </div>
-                <h3 id="action-text">BEKLE</h3>
-                <p id="action-comment" class="comment"></p>
-            </div>
-
-            <!-- Shakeout Uyarısı (Sadece düşüş günleri görünür) -->
-            <div id="shakeout-panel" class="shakeout-panel glass-panel hidden">
-                <h4 id="shakeout-title">⚠️ Manipülasyon Analizi</h4>
-                <p id="shakeout-comment"></p>
-            </div>
-            
-            <!-- Akıllı Para (SMC) Analizi -->
-            <div id="smc-panel" class="smc-panel glass-panel hidden">
-                <h4>🐋 Akıllı Para (SMC) Analizi</h4>
-                <ul id="smc-list" class="smc-list">
-                    <!-- JS ile doldurulacak -->
-                </ul>
-            </div>
-
-            <!-- Pivot Seviyeleri -->
-            <div class="pivot-section glass-panel">
-                <h4>Klasik ve Camarilla Pivotları</h4>
-                <div class="pivot-grid">
-                    <div class="pivot-item"><span class="label">Klasik R2 (Direnç)</span><span class="value" id="r2-val">-</span></div>
-                    <div class="pivot-item"><span class="label">Camarilla H3 (Direnç)</span><span class="value" id="camh3-val">-</span></div>
-                    <div class="pivot-item"><span class="label">Klasik R1 (Direnç)</span><span class="value" id="r1-val">-</span></div>
-                    <div class="pivot-item main-pivot"><span class="label">Pivot (Orta)</span><span class="value" id="pp-val">-</span></div>
-                    <div class="pivot-item"><span class="label">Klasik S1 (Destek)</span><span class="value" id="s1-val">-</span></div>
-                    <div class="pivot-item"><span class="label">Camarilla L3 (Destek)</span><span class="value" id="caml3-val">-</span></div>
-                    <div class="pivot-item"><span class="label">Klasik S2 (Destek)</span><span class="value" id="s2-val">-</span></div>
-                </div>
-            </div>
-
-            <!-- Trading Planı -->
-            <div class="trading-plan glass-panel">
-                <h4 class="section-label">📋 Trading Planı</h4>
-                <div class="plan-grid">
-                    <div class="plan-card entry-card">
-                        <div class="plan-icon">🎯</div>
-                        <div class="plan-label">Giriş Noktası</div>
-                        <div class="plan-value" id="entry-val">—</div>
-                        <div class="plan-sub">Bu seviyede alım düşün</div>
-                    </div>
-                    <div class="plan-card profit-card">
-                        <div class="plan-icon">✅</div>
-                        <div class="plan-label">Kâr Hedefi (R1)</div>
-                        <div class="plan-value" id="tp-val">—</div>
-                        <div class="plan-sub" id="gain-pct">+%0.00</div>
-                    </div>
-                    <div class="plan-card stop-card">
-                        <div class="plan-icon">🛑</div>
-                        <div class="plan-label">Stop-Loss (S2)</div>
-                        <div class="plan-value" id="sl-val">—</div>
-                        <div class="plan-sub" id="loss-pct">-%0.00</div>
-                    </div>
-                    <div class="plan-card rr-card">
-                        <div class="plan-icon">⚖️</div>
-                        <div class="plan-label">Risk/Ödül</div>
-                        <div class="plan-value" id="rr-val">1:0</div>
-                        <div class="plan-sub">≥1.5 hedefle</div>
-                    </div>
-                </div>
-                <p class="disclaimer">⚠️ Bu bir yatırım tavsiyesi değil, teknik analiz önerisidir. Kararı sen verirsin.</p>
-            </div>
-
-            <!-- Teknik Göstergeler -->
-            <div class="tech-section glass-panel">
-                <h4 class="section-label">📊 Teknik Göstergeler</h4>
-                <div class="tech-grid">
-                    <div class="tech-item">
-                        <span class="tech-label">RSI (14)</span>
-                        <span class="tech-value" id="rsi-val">—</span>
-                    </div>
-                    <div class="tech-item">
-                        <span class="tech-label">MACD</span>
-                        <span class="tech-value" id="macd-val">—</span>
-                    </div>
-                    <div class="tech-item">
-                        <span class="tech-label">MFI (Para Akışı)</span>
-                        <span class="tech-value" id="mfi-val">—</span>
-                    </div>
-                    <div class="tech-item">
-                        <span class="tech-label">Hacim Oran</span>
-                        <span class="tech-value" id="vol-val">—</span>
-                    </div>
-                    <div class="tech-item">
-                        <span class="tech-label">ATR (Volatilite)</span>
-                        <span class="tech-value" id="atr-val">—</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <!-- SUMMARY BAR -->
+    <div id="summary-bar" class="summary-bar" style="display:none;">
+        <span id="sum-total"></span>
+        <span id="sum-support"></span>
+        <span id="sum-high"></span>
     </div>
 
-    <script src="/static/script.js?v=3"></script>
+    <!-- RESULTS -->
+    <main class="results" id="results"></main>
+
+    <!-- EMPTY STATE -->
+    <div id="empty-state" class="empty-state" style="display:none;">
+        <div class="empty-icon">🔍</div>
+        <p>Seçilen filtreye uygun hisse bulunamadı.</p>
+        <small>Farklı bir filtre seçin veya yeniden tarayın.</small>
+    </div>
+
+    <script src="/static/script.js"></script>
 </body>
 </html>

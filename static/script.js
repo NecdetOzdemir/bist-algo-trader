@@ -1,418 +1,339 @@
-document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById('tickerInput').addEventListener('keypress', e => {
-        if (e.key === 'Enter') analyzeTicker();
-    });
-});
+/* ═══════════════════════════════════════════
+   BIST Tarayıcı — Ana JavaScript
+   ═══════════════════════════════════════════ */
 
-function analyzeTicker() {
-    const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
-    if (!ticker) return;
+'use strict';
 
-    document.getElementById('result-section').classList.add('hidden');
-    document.getElementById('loading').classList.remove('hidden');
-    document.getElementById('shakeout-panel').classList.add('hidden');
+// ──────────────────────────────────────
+// Global Durum
+// ──────────────────────────────────────
+let allStocks   = [];     // Tüm taranan hisseler
+let currentFilter = 'all';
+const CHUNK = 15;         // Her istekte kaç hisse
+let scanning  = false;
 
-    fetch(`/api/analyze/${ticker}`)
-        .then(r => r.json())
-        .then(data => {
-            document.getElementById('loading').classList.add('hidden');
+// ──────────────────────────────────────
+// Tarama
+// ──────────────────────────────────────
+async function startScan() {
+    if (scanning) return;
+    scanning = true;
 
-            if (data.error) {
-                alert('⚠️ ' + data.error);
-                return;
-            }
+    const btn  = document.getElementById('scanBtn');
+    const prog = document.getElementById('progress-wrap');
+    const bar  = document.getElementById('progress-bar');
+    const txt  = document.getElementById('progress-text');
+    const res  = document.getElementById('results');
+    const smry = document.getElementById('summary-bar');
+    const flt  = document.getElementById('filters');
 
-            // --- Üst Kart ---
-            document.getElementById('tic-name').innerText = data.ticker;
-            document.getElementById('price-tag').innerText = `${data.price.toFixed(2)} TL`;
-            document.getElementById('date-tag').innerText = data.date + ' verisi';
-            document.getElementById('action-comment').innerText = data.comment;
-
-            const actionEl = document.getElementById('action-text');
-            actionEl.innerText = data.action;
-            actionEl.style.color = data.color;
-
-            // Score animasyonu
-            animateValue('score-value', 0, data.score, 900);
-            const circle = document.querySelector('.score-circle');
-            circle.style.borderColor = data.color;
-            circle.style.boxShadow = `0 0 24px ${data.color}40`;
-
-            // --- Shakeout Paneli ---
-            if (data.shakeout_signal) {
-                document.getElementById('shakeout-title').innerText = data.shakeout_signal;
-                document.getElementById('shakeout-comment').innerText = data.shakeout_comment;
-                const panel = document.getElementById('shakeout-panel');
-                panel.classList.remove('hidden');
-
-                // Renk: Shakeout = sarı, Gerçek Baskı = kırmızı
-                if (data.shakeout_signal.includes('SHAKEOUT')) {
-                    panel.style.borderLeftColor = '#ffd700';
-                } else if (data.shakeout_signal.includes('GERÇEK')) {
-                    panel.style.borderLeftColor = '#ff3366';
-                } else {
-                    panel.style.borderLeftColor = '#ff7b00';
-                }
-            }
-            
-            // --- SMC (Akıllı Para) Paneli ---
-            if (data.smc_comments && data.smc_comments.length > 0) {
-                const smcPanel = document.getElementById('smc-panel');
-                const smcList = document.getElementById('smc-list');
-                smcList.innerHTML = ''; // Temizle
-                
-                data.smc_comments.forEach(comment => {
-                    const li = document.createElement('li');
-                    li.innerText = comment;
-                    smcList.appendChild(li);
-                });
-                
-                smcPanel.classList.remove('hidden');
-            } else {
-                document.getElementById('smc-panel').classList.add('hidden');
-            }
-
-            // --- Pivot Seviyeleri ---
-            document.getElementById('r2-val').innerText = `${data.r2.toFixed(2)} TL`;
-            if (data.cam_h3) document.getElementById('camh3-val').innerText = `${data.cam_h3.toFixed(2)} TL`;
-            document.getElementById('r1-val').innerText = `${data.r1.toFixed(2)} TL`;
-            document.getElementById('pp-val').innerText = `${data.pp.toFixed(2)} TL`;
-            document.getElementById('s1-val').innerText = `${data.s1.toFixed(2)} TL`;
-            if (data.cam_l3) document.getElementById('caml3-val').innerText = `${data.cam_l3.toFixed(2)} TL`;
-            document.getElementById('s2-val').innerText = `${data.s2.toFixed(2)} TL`;
-
-            // Mevcut fiyatı pivot haritasına göre işaretle
-            highlightPivot(data.price, data.r2, data.r1, data.pp, data.s1, data.s2);
-
-            // --- Trading Planı ---
-            document.getElementById('entry-val').innerText = `${data.entry.toFixed(2)} TL`;
-            document.getElementById('tp-val').innerText = `${data.take_profit.toFixed(2)} TL`;
-            document.getElementById('sl-val').innerText = `${data.stop_loss.toFixed(2)} TL`;
-            document.getElementById('gain-pct').innerText = `+%${data.gain_pct.toFixed(2)}`;
-            document.getElementById('loss-pct').innerText = `-%${data.loss_pct.toFixed(2)}`;
-            document.getElementById('rr-val').innerText = `1:${data.rr_ratio.toFixed(2)}`;
-
-            // RR rengini güncelle
-            const rrVal = document.getElementById('rr-val');
-            rrVal.style.color = data.rr_ratio >= 1.5 ? 'var(--green)' : data.rr_ratio >= 1.0 ? 'var(--yellow)' : 'var(--red)';
-
-            // --- Teknik Göstergeler ---
-            const rsiEl = document.getElementById('rsi-val');
-            rsiEl.innerText = data.rsi;
-            rsiEl.style.color = data.rsi < 30 ? 'var(--green)' : data.rsi > 70 ? 'var(--red)' : 'var(--text-main)';
-
-            document.getElementById('macd-val').innerText = data.macd > 0 ? `+${data.macd}` : data.macd;
-            document.getElementById('mfi-val').innerText = data.mfi;
-            document.getElementById('vol-val').innerText = `${(data.rel_volume * 100).toFixed(0)}%`;
-            document.getElementById('atr-val').innerText = `${data.atr.toFixed(2)} TL`;
-
-            document.getElementById('result-section').classList.remove('hidden');
-        })
-        .catch(err => {
-            document.getElementById('loading').classList.add('hidden');
-            alert('Sunucuya bağlanılamadı.');
-            console.error(err);
-        });
-}
-
-function highlightPivot(price, r2, r1, pp, s1, s2) {
-    const levels = [
-        { id: 'r2-val', val: r2 }, { id: 'r1-val', val: r1 },
-        { id: 'pp-val', val: pp }, { id: 's1-val', val: s1 }, { id: 's2-val', val: s2 }
-    ];
-    levels.forEach(({ id }) => {
-        let el = document.getElementById(id);
-        if(el) {
-            el.parentNode.style.opacity = '0.7';
-            el.parentNode.style.border = '';
-        }
-    });
-
-    // Fiyata en yakın seviyeyi parlat
-    let closest = levels.reduce((a, b) => Math.abs(a.val - price) < Math.abs(b.val - price) ? a : b);
-    let closestEl = document.getElementById(closest.id).parentNode;
-    closestEl.style.opacity = '1';
-    closestEl.style.transform = 'scale(1.02)';
-    closestEl.style.border = '1px solid var(--accent)';
-}
-
-function animateValue(id, start, end, duration) {
-    const obj = document.getElementById(id);
-    const range = end - start;
-    const stepTime = Math.max(10, Math.floor(duration / 100));
-    let current = start;
-    const step = range / (duration / stepTime);
-
-    const timer = setInterval(() => {
-        current += step;
-        if ((step > 0 && current >= end) || (step < 0 && current <= end)) {
-            obj.innerText = Math.round(end);
-            clearInterval(timer);
-        } else {
-            obj.innerText = Math.round(current);
-        }
-    }, stepTime);
-}
-
-async function fetchAllChunks(progressBtn, totalTickers = 100) {
-    let allResults = [];
-    let limit = 10; // Her istekte 10 hisse tara (Render timeout'a girmesin diye)
-    
-    for (let start = 0; start < totalTickers; start += limit) {
-        progressBtn.innerHTML = `⏳ Taranıyor (${start} / ${totalTickers})... Lütfen bekleyin.`;
-        try {
-            let res = await fetch(`/api/scan_chunk?start=${start}&limit=${limit}`);
-            if (!res.ok) throw new Error('Sunucu hatası');
-            let data = await res.json();
-            if (data.results) {
-                allResults.push(...data.results);
-            }
-        } catch (e) {
-            console.error("Parça tarama hatası:", e);
-        }
-    }
-    return allResults;
-}
-
-async function scanOpportunities() {
-    const btn = document.getElementById('scanBtn');
-    const resultsPanel = document.getElementById('scanner-results');
-    const list = document.getElementById('scanner-list');
-    
+    // Reset
+    allStocks = [];
+    res.innerHTML = '';
+    smry.style.display = 'none';
+    flt.style.display = 'none';
+    prog.style.display = 'flex';
     btn.disabled = true;
-    resultsPanel.classList.add('hidden');
-    list.innerHTML = '';
+    btn.querySelector('.btn-text').textContent = 'Taranıyor...';
+
+    let offset = 0;
+    let total  = 134; // fallback
 
     try {
-        let allData = await fetchAllChunks(btn);
-        
-        // Fırsat Filtresi (RSI < 40, Score > 55, Düşüş > -%5)
-        let data = allData.filter(d => {
-            let rsi = d.rsi || 100;
-            let score = d.score || 0;
-            let ret = d.return_1d || 0;
-            return rsi > 20 && rsi < 40 && score > 55 && ret > -0.05;
-        });
-        
-        // Puanlara göre sırala
-        data.sort((a, b) => (b.score || 0) - (a.score || 0));
-        if (data.length === 0) {
-            list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için (RSI < 35 ve Yüksek AI Puanı) şartlarını sağlayan hisse bulunamadı.</p>';
-        } else {
-            data.forEach(stock => {
-                const item = document.createElement('div');
-                item.className = 'scanner-item';
-                item.onclick = () => {
-                    document.getElementById('tickerInput').value = stock.ticker;
-                    analyzeTicker();
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                };
-                
-                item.innerHTML = `
-                    <div>
-                        <div class="scanner-tic">${stock.ticker}</div>
-                        <div class="scanner-details">Fiyat: ${stock.price} TL | RSI: ${stock.rsi}</div>
-                    </div>
-                    <div style="text-align:right">
-                        <div class="scanner-score">${stock.score} Puan</div>
-                        <div class="scanner-details">Hedef: ${stock.take_profit.toFixed(2)} TL</div>
-                    </div>
-                `;
-                list.appendChild(item);
-            });
+        while (true) {
+            const url  = `/scan?offset=${offset}&limit=${CHUNK}`;
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('Sunucu hatası');
+            const json = await resp.json();
+
+            total  = json.total || total;
+            offset = json.next_offset;
+
+            // Geçerli verileri ekle
+            allStocks.push(...json.results);
+
+            // Progress güncelle
+            const pct = Math.min(100, Math.round(offset / total * 100));
+            bar.style.width  = pct + '%';
+            txt.textContent  = `Taranan: ${Math.min(offset, total)} / ${total}`;
+
+            // Yeni gelenlerden geçenleri canlı olarak göster
+            renderFiltered();
+
+            if (json.done || offset >= total) break;
         }
-        resultsPanel.classList.remove('hidden');
-    } catch (err) {
-        alert('Tarama sırasında hata oluştu.');
-        console.error(err);
-    } finally {
-        btn.innerHTML = '🎯 BIST 100 Fırsat Tarayıcı';
-        btn.disabled = false;
+    } catch (e) {
+        txt.textContent = '⚠ Bağlantı hatası. Yeniden deneyin.';
+        console.error(e);
     }
+
+    // Tamamlandı
+    bar.style.width = '100%';
+    txt.textContent = `✅ Tarama tamamlandı — ${allStocks.length} hisse bulundu`;
+
+    document.getElementById('scan-time').textContent =
+        'Son tarama: ' + new Date().toLocaleTimeString('tr-TR');
+
+    flt.style.display = 'flex';
+    smry.style.display = 'flex';
+    renderSummary();
+
+    btn.querySelector('.btn-text').textContent = 'Yeniden Tara';
+    btn.disabled = false;
+    scanning = false;
 }
 
-async function scanTopScores() {
-    const topBtn = document.getElementById('topBtn');
-    const scanBtn = document.getElementById('scanBtn');
-    const resultsPanel = document.getElementById('scanner-results');
-    const list = document.getElementById('scanner-list');
-    
-    topBtn.disabled = true;
-    scanBtn.disabled = true;
-    resultsPanel.classList.add('hidden');
-    list.innerHTML = '';
-
-    try {
-        let allData = await fetchAllChunks(topBtn);
-        
-        // En iyiler filtresi (Score > 55)
-        let data = allData.filter(d => (d.score || 0) > 55);
-        
-        // Puanlara göre sırala ve ilk 10'u al
-        data.sort((a, b) => (b.score || 0) - (a.score || 0));
-        data = data.slice(0, 10);
-
-        topBtn.innerHTML = '🔥 Günün En İyileri';
-        topBtn.disabled = false;
-        scanBtn.disabled = false;
-        
-        document.querySelector('#scanner-results h3').innerText = '🔥 Günün En Yüksek Puanlı Hisseleri (Kısıtlamasız)';
-        
-        if (data.length === 0) {
-            list.innerHTML = '<p style="text-align:center; color:#a0aec0;">Şu an için 55 puanı geçen hisse bulunamadı.</p>';
-        } else {
-            data.forEach(stock => {
-                const item = document.createElement('div');
-                item.className = 'scanner-item';
-                item.onclick = () => {
-                    document.getElementById('tickerInput').value = stock.ticker;
-                    analyzeTicker();
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                };
-                
-                item.innerHTML = `
-                    <div>
-                        <div class="scanner-tic">${stock.ticker}</div>
-                        <div class="scanner-details">Fiyat: ${stock.price} TL | Günlük: ${stock.return_1d > 0 ? '+' : ''}${(stock.return_1d * 100).toFixed(1)}%</div>
-                    </div>
-                    <div style="text-align:right">
-                        <div class="scanner-score" style="color:var(--red)">${stock.score} Puan</div>
-                        <div class="scanner-details">RSI: ${stock.rsi}</div>
-                    </div>
-                `;
-                list.appendChild(item);
-            });
-        }
-        resultsPanel.classList.remove('hidden');
-    } catch (err) {
-        alert('Tarama sırasında hata oluştu.');
-        console.error(err);
-    } finally {
-        topBtn.innerHTML = '🔥 Günün En İyileri';
-        topBtn.disabled = false;
-        scanBtn.disabled = false;
-    }
+// ──────────────────────────────────────
+// Filtreleme
+// ──────────────────────────────────────
+function setFilter(f, el) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderFiltered();
 }
 
-// ========================
-// ☀️ SABAH PLANI (KUANTUM)
-// ========================
-
-let morningStocks = [];
-
-function trendBadge(trend) {
-    if (trend === 'strong_up') return '<span style="background:#00ffa322;color:#00ffa3;padding:2px 8px;border-radius:20px;font-size:0.75rem;">📈 Güçlü Trend</span>';
-    if (trend === 'up')        return '<span style="background:#00d2ff22;color:#00d2ff;padding:2px 8px;border-radius:20px;font-size:0.75rem;">↗️ Yükselen Trend</span>';
-    return '<span style="background:#ff4a6e22;color:#ff4a6e;padding:2px 8px;border-radius:20px;font-size:0.75rem;">↘️ Düşen Trend</span>';
+function passFilter(s) {
+    if (currentFilter === 'all')        return true;
+    if (currentFilter === 'support')    return ['near_s1','near_s2','between_s2_s1','below_pivot','below_s2'].includes(s.pivot_zone);
+    if (currentFilter === 'pivot_above') return ['above_pivot','near_pivot','near_r1'].includes(s.pivot_zone);
+    if (currentFilter === 'strong')     return s.sma_trend === 'strong_up';
+    if (currentFilter === 'high_score') return s.score >= 6;
+    return true;
 }
 
-function compBadge(comp) {
-    const color = comp >= 8 ? '#00ffa3' : comp >= 6 ? '#ffd200' : comp >= 4 ? '#ff7b00' : '#ff4a6e';
-    return `<span style="background:${color}22;color:${color};padding:2px 8px;border-radius:20px;font-size:0.75rem;font-weight:700;">${comp}/10 Komp.</span>`;
+function renderFiltered() {
+    const visible = allStocks
+        .filter(passFilter)
+        .sort((a, b) => b.score - a.score || b.rvol - a.rvol);
+
+    const res = document.getElementById('results');
+    res.innerHTML = visible.length === 0
+        ? ''
+        : visible.map(renderCard).join('');
+
+    document.getElementById('empty-state').style.display =
+        (visible.length === 0 && allStocks.length > 0) ? 'block' : 'none';
 }
 
-async function scanMorningPlan() {
-    const btn   = document.getElementById('morningBtn');
-    const panel = document.getElementById('morning-panel');
-    const list  = document.getElementById('morning-list');
-    btn.disabled = true;
-    panel.classList.remove('hidden');
-    list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Taranıyor, lütfen bekleyin...</p>';
-    try {
-        let allData = await fetchAllChunks(btn);
+function renderSummary() {
+    const total   = allStocks.length;
+    const support = allStocks.filter(s => passFilter({...s, _f: 'support'}) ||
+        ['near_s1','near_s2','between_s2_s1','below_pivot'].includes(s.pivot_zone)).length;
+    const high    = allStocks.filter(s => s.score >= 6).length;
 
-        // BACKTEST KANITLADI: Sadece GÜÇLü TREND (SMA50 > SMA200 ve Fiyat > SMA50)
-        // Strong_up: EV +%0.66 (10 gün) | up: daha düşük performans
-        let filtered = allData.filter(d =>
-            d.sma_trend === 'strong_up' &&
-            (d.composite_score || 0) >= 5 &&
-            (d.ev_pct || 0) > 0
-        );
-        // Composite Score'a göre sırala, eşit olunca EV'ye bak
-        filtered.sort((a, b) => {
-            if ((b.composite_score || 0) !== (a.composite_score || 0))
-                return (b.composite_score || 0) - (a.composite_score || 0);
-            return (b.ev_pct || 0) - (a.ev_pct || 0);
-        });
-        morningStocks = filtered.slice(0, 5);  // En iyi 5 — odaklanmak için
-
-        if (morningStocks.length === 0) {
-            list.innerHTML = '<p style="color:#a0aec0;text-align:center;">Bugün kriterleri karşılayan hisse bulunamadı.<br><small>Gereken: SMA50 > SMA200 (Güçlü Trend) + Comp ≥5 + EV>0</small></p>';
-            return;
-        }
-        renderMorningList();
-    } catch (err) {
-        list.innerHTML = '<p style="color:#ff4a6e;text-align:center;">Tarama sırasında hata oluştu.</p>';
-        console.error(err);
-    } finally {
-        btn.innerHTML = '☀️ Sabah Planım';
-        btn.disabled = false;
-    }
+    document.getElementById('sum-total').innerHTML   = `<b>${total}</b> hisse tarandı`;
+    document.getElementById('sum-support').innerHTML = `<b>${support}</b> destek bölgesinde`;
+    document.getElementById('sum-high').innerHTML    = `<b>${high}</b> skor ≥ 6`;
 }
 
-function renderMorningList() {
-    const list     = document.getElementById('morning-list');
-    const budget   = parseFloat(document.getElementById('budgetInput').value) || 0;
-    const n        = morningStocks.length;
+// ──────────────────────────────────────
+// Kart render
+// ──────────────────────────────────────
+function renderCard(s) {
+    const budget = parseFloat(document.getElementById('budgetInput').value) || 0;
+    const slots  = parseInt(document.getElementById('slotInput').value)  || 5;
+    const perSlot = budget > 0 ? budget / slots : 0;
+    const lots    = (perSlot > 0 && s.price > 0)
+        ? Math.floor(perSlot / s.price)
+        : null;
+    const lotCost = lots ? (lots * s.price).toLocaleString('tr-TR', {maximumFractionDigits:0}) : null;
 
-    document.getElementById('budget-info').innerText = budget > 0
-        ? `→ ${n} pozisyon | Her biri: ${Math.floor(budget/n).toLocaleString('tr-TR')} TL`
+    // Skor rengi
+    const scorePct  = (s.score / s.score_max) * 100;
+    const scoreColor = s.score >= 7 ? '#00e599'
+        : s.score >= 5 ? '#f6c90e'
+        : s.score >= 3 ? '#f6853a'
+        : '#ff4d6d';
+
+    // Pivot bar hesabı
+    const pBar = buildPivotBar(s);
+
+    // SMA trend rozeti
+    const trendBadge = {
+        'strong_up':   '<span class="badge badge-green">⬆ Güçlü Trend</span>',
+        'up':          '<span class="badge badge-blue">↑ Trend Yukarı</span>',
+        'down':        '<span class="badge badge-red">↓ Trend Aşağı</span>',
+        'strong_down': '<span class="badge badge-red">⬇ Güçlü Düşüş</span>',
+    }[s.sma_trend] || '';
+
+    // RSI rozeti
+    const rsiBadge = s.rsi != null
+        ? `<span class="badge ${s.rsi >= 40 && s.rsi <= 65 ? 'badge-green' : s.rsi < 40 ? 'badge-yellow' : 'badge-red'}">RSI ${s.rsi}</span>`
         : '';
 
-    list.innerHTML = '';
-    morningStocks.forEach((s, i) => {
-        const perStock = budget > 0 ? Math.floor(budget / n) : 0;
-        // Kelly önerisi (budget varsa)
-        const kellyTL  = budget > 0 ? Math.round(budget * (s.kelly_half || 0) / 100) : 0;
-        const lots     = perStock > 0 && s.price > 0 ? Math.floor(perStock / s.price) : null;
-        const evColor  = (s.ev_pct || 0) > 0 ? '#00ffa3' : '#ff4a6e';
-        const evSign   = (s.ev_pct || 0) > 0 ? '+' : '';
+    // MACD rozeti
+    const macdBadge = s.macd_bull
+        ? '<span class="badge badge-blue">MACD ↑</span>'
+        : '<span class="badge badge-red">MACD ↓</span>';
 
-        const card = document.createElement('div');
-        card.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:14px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all 0.2s;';
-        card.onmouseenter = () => card.style.background = 'rgba(255,255,255,0.09)';
-        card.onmouseleave = () => card.style.background = 'rgba(255,255,255,0.05)';
-        card.onclick = () => { document.getElementById('tickerInput').value = s.ticker; analyzeTicker(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    // ADX rozeti
+    const adxBadge = s.adx != null
+        ? `<span class="badge ${s.adx >= 25 ? 'badge-purple' : s.adx >= 20 ? 'badge-blue' : 'badge-neutral'}">ADX ${s.adx}</span>`
+        : '';
 
-        card.innerHTML = `
-            <!-- Başlık satırı -->
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-                <div>
-                    <span style="font-size:1.15rem;font-weight:800;color:#fff;">${i+1}. ${s.ticker}</span>
-                    &nbsp;${trendBadge(s.sma_trend)}&nbsp;${compBadge(s.composite_score || 0)}
-                    <div style="color:#a0aec0;font-size:0.8rem;margin-top:5px;">
-                        Fiyat: <b style="color:#fff;">${s.price} TL</b>
-                        &nbsp;·&nbsp; SMA50: <b>${s.sma50} TL</b>
-                        &nbsp;·&nbsp; SMA200: <b>${s.sma200} TL</b>
-                    </div>
-                    ${lots !== null ? `<div style="color:#ffd200;font-size:0.8rem;margin-top:3px;">Eşit bölüm → ~${lots} lot &nbsp;|&nbsp; Kelly önerisi → ${kellyTL.toLocaleString('tr-TR')} TL</div>` : ''}
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-size:0.72rem;color:#a0aec0;">EV (Beklenen Değer)</div>
-                    <div style="font-size:1.2rem;font-weight:800;color:${evColor};">${evSign}${(s.ev_pct || 0).toFixed(2)}%</div>
-                    <div style="font-size:0.7rem;color:#a0aec0;margin-top:2px;">Kazanma ~%${s.win_rate_est || 50}</div>
-                </div>
+    // ATR% rozeti
+    const atrBadge = s.atr_pct != null
+        ? `<span class="badge badge-neutral">ATR ${s.atr_pct}%</span>`
+        : '';
+
+    // Rel. Hacim
+    const rvolBadge = s.rvol != null
+        ? `<span class="badge ${s.rvol >= 1.5 ? 'badge-green' : s.rvol >= 1.3 ? 'badge-blue' : 'badge-neutral'}">Hacim ${s.rvol}x</span>`
+        : '';
+
+    // 5G Momentum
+    const momBadge = s.mom_5d != null
+        ? `<span class="badge ${s.mom_5d >= 2 && s.mom_5d <= 15 ? 'badge-green' : s.mom_5d > 15 ? 'badge-red' : 'badge-neutral'}">5G: ${s.mom_5d > 0 ? '+' : ''}${s.mom_5d}%</span>`
+        : '';
+
+    // BB rozeti
+    const bbBadge = s.bb_pct != null
+        ? `<span class="badge badge-neutral">BB: ${s.bb_pct}%</span>`
+        : '';
+
+    // Lot bilgisi
+    const lotInfo = lots
+        ? `Her pozisyona <b>${perSlot.toLocaleString('tr-TR',{maximumFractionDigits:0})} TL</b> → <b>${lots} lot</b> × ${s.price} TL = ${lotCost} TL`
+        : '<span style="color:var(--text-muted)">Bütçe girin → lot hesabı görünsün</span>';
+
+    return `
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="ticker">${s.ticker}</div>
+            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">
+                Stop: <b style="color:var(--red)">${s.stop} TL</b>
+                &nbsp;·&nbsp;
+                Hedef: <b style="color:var(--green)">${s.target} TL</b>
             </div>
-            <!-- Stop / Hedef satırı (ATR bazlı) -->
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                <div style="flex:1;background:rgba(0,255,163,0.08);border:1px solid rgba(0,255,163,0.2);border-radius:10px;padding:10px;text-align:center;">
-                    <div style="font-size:0.7rem;color:#a0aec0;">✅ HEDEF (ATR×3)</div>
-                    <div style="font-size:1rem;font-weight:700;color:#00ffa3;">${s.atr_tp} TL</div>
-                    <div style="font-size:0.72rem;color:#00ffa3;">+%${(s.atr_tp_pct || 0).toFixed(1)}</div>
-                </div>
-                <div style="flex:1;background:rgba(255,74,110,0.08);border:1px solid rgba(255,74,110,0.2);border-radius:10px;padding:10px;text-align:center;">
-                    <div style="font-size:0.7rem;color:#a0aec0;">🛑 STOP (ATR×1.5)</div>
-                    <div style="font-size:1rem;font-weight:700;color:#ff4a6e;">${s.atr_stop} TL</div>
-                    <div style="font-size:0.72rem;color:#ff4a6e;">-%${(s.atr_stop_pct || 0).toFixed(1)}</div>
-                </div>
-                <div style="flex:1;background:rgba(255,210,0,0.06);border:1px solid rgba(255,210,0,0.18);border-radius:10px;padding:10px;text-align:center;">
-                    <div style="font-size:0.7rem;color:#a0aec0;">⚖️ RR / KELLY</div>
-                    <div style="font-size:1rem;font-weight:700;color:#ffd200;">1:2</div>
-                    <div style="font-size:0.72rem;color:#ffd200;">%${(s.kelly_half || 0).toFixed(1)} Kelly</div>
-                </div>
-            </div>`;
-        list.appendChild(card);
-    });
+        </div>
+        <div style="text-align:right;">
+            <div class="price">${s.price.toLocaleString('tr-TR')} TL</div>
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                Mevcut fiyat
+            </div>
+        </div>
+    </div>
+
+    <!-- Skor Barı -->
+    <div class="score-row">
+        <span class="score-label">Skor</span>
+        <div class="score-track">
+            <div class="score-fill" style="width:${scorePct}%; background:${scoreColor};"></div>
+        </div>
+        <span class="score-num" style="color:${scoreColor}">${s.score}/${s.score_max}</span>
+    </div>
+
+    <!-- Pivot Bar -->
+    <div class="pivot-section">
+        <div class="pivot-title">Pivot Seviyeleri</div>
+        ${pBar.html}
+        <div class="pivot-labels">
+            <span>S2 ${s.s2}</span>
+            <span>S1 ${s.s1}</span>
+            <span style="color:var(--blue)">P ${s.pivot}</span>
+            <span>R1 ${s.r1}</span>
+            <span>R2 ${s.r2}</span>
+        </div>
+        ${pBar.badge}
+    </div>
+
+    <!-- Stop / Hedef Kutucukları -->
+    <div class="trade-row">
+        <div class="trade-box stop">
+            <div class="trade-box-label">🛑 STOP</div>
+            <div class="trade-box-price">${s.stop} TL</div>
+            <div class="trade-box-pct">-%2.0</div>
+        </div>
+        <div class="trade-box target">
+            <div class="trade-box-label">🎯 HEDEF</div>
+            <div class="trade-box-price">${s.target} TL</div>
+            <div class="trade-box-pct">+%4.0</div>
+        </div>
+    </div>
+
+    <!-- İndikatör Rozetleri -->
+    <div class="badges">
+        ${trendBadge}
+        ${rsiBadge}
+        ${macdBadge}
+        ${adxBadge}
+        ${atrBadge}
+        ${rvolBadge}
+        ${momBadge}
+        ${bbBadge}
+    </div>
+
+    <!-- Lot Hesabı -->
+    <div class="lot-row">
+        📦 ${lotInfo}
+    </div>
+</div>`;
 }
 
-function recalcBudget() { if (morningStocks.length > 0) renderMorningList(); }
+// ──────────────────────────────────────
+// Pivot Bar Görselleştirme
+// ──────────────────────────────────────
+function buildPivotBar(s) {
+    const { price, s2, s1, pivot, r1, r2 } = s;
+
+    // Ekranın kapsayacağı aralık: S2'nin %10 altından R2'nin %10 üstüne
+    const rangeMin = s2 * 0.92;
+    const rangeMax = r2 * 1.08;
+    const range    = rangeMax - rangeMin;
+    if (range <= 0) return { html: '', badge: '' };
+
+    const pct = v => Math.max(0, Math.min(100, ((v - rangeMin) / range) * 100)).toFixed(1);
+
+    // Zone arka plan renkleri
+    const zoneColors = [
+        { from: pct(s2), to: pct(s1),    bg: 'rgba(0,229,153,0.2)'  },  // S2-S1 destek
+        { from: pct(s1), to: pct(pivot),  bg: 'rgba(0,229,153,0.1)'  },  // S1-P zayıf destek
+        { from: pct(pivot), to: pct(r1),  bg: 'rgba(79,142,247,0.1)' },  // P-R1 nötr
+        { from: pct(r1), to: pct(r2),     bg: 'rgba(255,77,109,0.1)' },  // R1-R2 direnç
+    ];
+
+    const fills = zoneColors.map(z =>
+        `<div class="pivot-zone-fill" style="left:${z.from}%; width:${Math.max(0,z.to-z.from)}%; background:${z.bg};"></div>`
+    ).join('');
+
+    const markers = [
+        { v: s2,    color: '#00e599' },
+        { v: s1,    color: '#00e599' },
+        { v: pivot, color: '#4f8ef7' },
+        { v: r1,    color: '#ff4d6d' },
+        { v: r2,    color: '#ff4d6d' },
+    ].map(m =>
+        `<div class="pivot-marker" style="left:${pct(m.v)}%; background:${m.color}; opacity:0.7;"></div>`
+    ).join('');
+
+    const needle = `<div class="pivot-price-needle" style="left:${pct(price)}%;"></div>`;
+
+    const html = `<div class="pivot-bar">${fills}${markers}${needle}</div>`;
+
+    // Zone rozeti
+    const zoneInfo = {
+        'near_s2':        { label: '🟢 S2 Desteğinde',    cls: 'badge-green'  },
+        'near_s1':        { label: '🟢 S1 Desteğinde',    cls: 'badge-green'  },
+        'between_s2_s1':  { label: '🟡 S2–S1 Arası',      cls: 'badge-yellow' },
+        'below_s2':       { label: '🔴 S2 Altında',        cls: 'badge-red'    },
+        'below_pivot':    { label: '🟡 Pivot Altı Destek', cls: 'badge-yellow' },
+        'near_pivot':     { label: '🔵 Pivot Yakını',      cls: 'badge-blue'   },
+        'above_pivot':    { label: '✅ Pivot Üstü',        cls: 'badge-blue'   },
+        'near_r1':        { label: '🔴 R1 Dirençte',       cls: 'badge-red'    },
+        'above_r1':       { label: '🔴 Direnç Üstü',      cls: 'badge-red'    },
+        'above_r2':       { label: '🔴 R2 Üstü (Aşırı)',  cls: 'badge-red'    },
+    }[s.pivot_zone] || { label: s.pivot_zone, cls: 'badge-neutral' };
+
+    const badge = `<span class="pivot-zone-badge badge ${zoneInfo.cls}">${zoneInfo.label}</span>`;
+
+    return { html, badge };
+}
+
+// ──────────────────────────────────────
+// Lot Güncelle (bütçe değişince)
+// ──────────────────────────────────────
+function updateLots() {
+    if (allStocks.length > 0) renderFiltered();
+}
