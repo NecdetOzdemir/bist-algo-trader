@@ -197,6 +197,43 @@ function renderCard(s) {
         ? `Her pozisyona <b>${perSlot.toLocaleString('tr-TR',{maximumFractionDigits:0})} TL</b> → <b>${lots} lot</b> × ${s.price} TL = ${lotCost} TL`
         : '<span style="color:var(--text-muted)">Bütçe girin → lot hesabı görünsün</span>';
 
+    // İz süren rozeti
+    const trailingBadge = s.is_trailing
+        ? '<span class="badge" style="background:var(--blue); color:#fff;">🌊 İz Süren Trend</span>'
+        : '';
+
+    // Stop / Hedef Kutucukları
+    let tradeRowHTML = '';
+    if (s.is_trailing) {
+        tradeRowHTML = `
+        <div class="trade-row">
+            <div class="trade-box stop" style="border-color:var(--blue);">
+                <div class="trade-box-label" style="color:var(--blue);">🌊 İLK STOP</div>
+                <div class="trade-box-price">${s.trailing_stop} TL</div>
+                <div class="trade-box-pct" style="color:var(--blue);">Gün Sonu Takip</div>
+            </div>
+            <div class="trade-box target" style="background-color:rgba(79,142,247,0.1); border-color:var(--blue);">
+                <div class="trade-box-label" style="color:var(--blue);">📈 İZ SÜREN</div>
+                <div class="trade-box-price" style="font-size:1.0rem; color:var(--blue);">Trendi Sür!</div>
+                <div class="trade-box-pct" style="color:var(--blue);">Hedef Yok</div>
+            </div>
+        </div>`;
+    } else {
+        tradeRowHTML = `
+        <div class="trade-row">
+            <div class="trade-box stop">
+                <div class="trade-box-label">🛑 STOP</div>
+                <div class="trade-box-price">${s.stop} TL</div>
+                <div class="trade-box-pct">-%${s.stop_pct}</div>
+            </div>
+            <div class="trade-box target">
+                <div class="trade-box-label">🎯 HEDEF</div>
+                <div class="trade-box-price">${s.target} TL</div>
+                <div class="trade-box-pct">+%${s.target_pct}</div>
+            </div>
+        </div>`;
+    }
+
     return `
 <div class="card">
     <div class="card-header">
@@ -240,21 +277,11 @@ function renderCard(s) {
     </div>
 
     <!-- Stop / Hedef Kutucukları -->
-    <div class="trade-row">
-        <div class="trade-box stop">
-            <div class="trade-box-label">🛑 STOP</div>
-            <div class="trade-box-price">${s.stop} TL</div>
-            <div class="trade-box-pct">-%2.0</div>
-        </div>
-        <div class="trade-box target">
-            <div class="trade-box-label">🎯 HEDEF</div>
-            <div class="trade-box-price">${s.target} TL</div>
-            <div class="trade-box-pct">+%4.0</div>
-        </div>
-    </div>
+    ${tradeRowHTML}
 
     <!-- İndikatör Rozetleri -->
     <div class="badges">
+        ${trailingBadge}
         ${trendBadge}
         ${rsiBadge}
         ${macdBadge}

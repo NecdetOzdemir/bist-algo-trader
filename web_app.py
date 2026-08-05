@@ -45,9 +45,24 @@ def scan():
         'results':     results,
         'total':       len(BIST_100),
         'next_offset': offset + limit,
-        'done':        (offset + limit) >= len(BIST_100)
     })
 
+
+@app.route('/market_status')
+def market_status():
+    """XU100 SMA50 durumunu kontrol et (Test C1 Filtresi)."""
+    try:
+        df = yf.download('XU100.IS', period='100d', progress=False, auto_adjust=True, session=yf_session)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        close = df['Close'].astype(float)
+        sma50 = close.rolling(50).mean()
+        last_c = float(close.iloc[-1])
+        last_s = float(sma50.iloc[-1])
+        ok = last_c > last_s
+        return jsonify({'ok': ok, 'close': round(last_c, 2), 'sma50': round(last_s, 2)})
+    except Exception as e:
+        return jsonify({'ok': True, 'error': str(e)}) # Hata olursa kısıtlamayalım
 
 # ──────────────────────────────────────────────
 # Yardımcı fonksiyonlar
@@ -223,6 +238,17 @@ def analyze(ticker):
     else:
         sma_trend = 'unknown'
 
+    macd_bull = bool(macd_v and macd_sv and macd_v > macd_sv)
+    is_trailing = bool(adx and adx >= 25 and sma_trend == 'strong_up' and macd_bull)
+    trailing_stop = round(price - (atr * 2.5), 2) if atr else None
+
+    # Dinamik Risk/Kazanc Hesaplamasi (ATR Tabanli)
+    risk_pct = max(2.0, min(atr_pct * 1.2, 5.0)) if atr_pct else 3.0
+    stop_p = round(price * (1 - (risk_pct / 100)), 2)
+    reward_mult = 3.0 if score >= 6 else 2.0
+    target_pct = risk_pct * reward_mult
+    target_p = round(price * (1 + (target_pct / 100)), 2)
+
     return {
         'ticker':     ticker.replace('.IS', ''),
         'price':      price,
@@ -240,15 +266,19 @@ def analyze(ticker):
         'sma50':      sma50v,
         'sma200':     sma200v,
         'sma_trend':  sma_trend,
-        'macd_bull':  bool(macd_v and macd_sv and macd_v > macd_sv),
+        'macd_bull':  macd_bull,
+        'is_trailing': is_trailing,
+        'trailing_stop': trailing_stop,
         'pivot':      pv,
         's1':         s1,
         's2':         s2,
         'r1':         r1,
         'r2':         r2,
         'pivot_zone': zone,
-        'stop':       round(price * 0.98, 2),
-        'target':     round(price * 1.04, 2),
+        'stop':       stop_p,
+        'stop_pct':   round(risk_pct, 1),
+        'target':     target_p,
+        'target_pct': round(target_pct, 1),
     }
 
 
